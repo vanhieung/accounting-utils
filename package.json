@@ -1,0 +1,32 @@
+{
+  "name": "invoice-electron-app",
+  "version": "1.0.0",
+  "description": "Auto download invoices",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.accounting.invoice-downloader",
+    "productName": "Invoice Batch Downloader",
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Tải Hóa Đơn Tự Động"
+    }
+  },
+  "author": "AccountingApp",
+  "dependencies": {
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3"
+  }
+}
