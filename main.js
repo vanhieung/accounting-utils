@@ -1,6 +1,7 @@
 const { app, BrowserWindow, session, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const JSZip = require('jszip');
 
 // Cấu hình thư mục lưu mặc định
@@ -28,7 +29,16 @@ function openBatchDownloadWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
       partition: 'persist:invoice-session'
+    }
+  });
+
+  // Security: Ngăn chặn điều hướng ngoài trang chủ
+  batchDownloadWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('https://hoadondientu.gdt.gov.vn') && !url.startsWith('http://hoadondientu.gdt.gov.vn')) {
+      event.preventDefault();
+      console.log('Chặn điều hướng tới:', url);
     }
   });
 
@@ -90,7 +100,7 @@ function openBatchDownloadWindow() {
         // Tự động giải nén XML và xoá ZIP
         if (savePath.toLowerCase().endsWith('.zip')) {
           try {
-            const fileData = fs.readFileSync(savePath);
+            const fileData = await fsPromises.readFile(savePath);
             const zip = await JSZip.loadAsync(fileData);
             let extractedCount = 0;
             const promises = [];
@@ -101,26 +111,21 @@ function openBatchDownloadWindow() {
             zip.forEach((relativePath, zipEntry) => {
               const entryName = zipEntry.name.toLowerCase();
               if (!zipEntry.dir && (entryName === 'invoice.xml' || entryName.endsWith('/invoice.xml'))) {
-                promises.push(new Promise(async (resolve, reject) => {
-                  try {
-                    const content = await zipEntry.async("nodebuffer");
-                    let destFileName = `${baseName}.xml`;
-                    let destPath = path.join(destDir, destFileName);
-                    
-                    let counter = 1;
-                    while (fs.existsSync(destPath)) {
-                      destFileName = `${baseName}_${counter}.xml`;
-                      destPath = path.join(destDir, destFileName);
-                      counter++;
-                    }
-                    
-                    fs.writeFileSync(destPath, content);
-                    extractedCount++;
-                    resolve();
-                  } catch (err) {
-                    reject(err);
+                promises.push((async () => {
+                  const content = await zipEntry.async("nodebuffer");
+                  let destFileName = `${baseName}.xml`;
+                  let destPath = path.join(destDir, destFileName);
+                  
+                  let counter = 1;
+                  while (fs.existsSync(destPath)) {
+                    destFileName = `${baseName}_${counter}.xml`;
+                    destPath = path.join(destDir, destFileName);
+                    counter++;
                   }
-                }));
+                  
+                  await fsPromises.writeFile(destPath, content);
+                  extractedCount++;
+                })());
               }
             });
             
@@ -129,7 +134,7 @@ function openBatchDownloadWindow() {
             // Nếu giải nén thành công, xoá file zip
             if (extractedCount > 0) {
               try {
-                fs.unlinkSync(savePath);
+                await fsPromises.unlink(savePath);
                 console.log('Extracted XML and deleted ZIP:', savePath);
               } catch(e) {
                 console.error('Không thể xóa file ZIP:', e);
@@ -183,9 +188,13 @@ app.on('window-all-closed', () => {
 
 // Đăng ký phiên tải
 ipcMain.handle('arm-download', (event, payload) => {
+  const now = Date.now();
+  // Dọn dẹp memory leak
+  pendingOperations = pendingOperations.filter(op => now - op.timestamp < 60000);
+  
   pendingOperations.push({
     operationId: payload.operationId,
-    timestamp: Date.now()
+    timestamp: now
   });
   return { success: true };
 });

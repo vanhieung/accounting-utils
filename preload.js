@@ -645,7 +645,8 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
 
 // Theo dõi thay đổi URL (SPA)
 let lastUrl = location.href;
-new MutationObserver(() => {
+
+const checkUrlChange = () => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
@@ -653,6 +654,21 @@ new MutationObserver(() => {
       initApp();
     }
   }
-}).observe(document, { subtree: true, childList: true });
+};
+
+const originalPushState = history.pushState;
+history.pushState = function() {
+  originalPushState.apply(this, arguments);
+  checkUrlChange();
+};
+
+const originalReplaceState = history.replaceState;
+history.replaceState = function() {
+  originalReplaceState.apply(this, arguments);
+  checkUrlChange();
+};
+
+window.addEventListener('popstate', checkUrlChange);
+window.addEventListener('hashchange', checkUrlChange);
 
 
