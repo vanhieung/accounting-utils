@@ -172,6 +172,30 @@ function openBatchDownloadWindow() {
 }
 
 app.whenReady().then(() => {
+  // Tự động chuyển session cookies thành persistent cookies để duy trì trạng thái đăng nhập
+  const customSession = session.fromPartition('persist:invoice-session');
+  customSession.cookies.on('changed', async (event, cookie, cause, removed) => {
+    if (removed) return;
+    if (cookie.session) {
+      const url = `${cookie.secure ? 'https' : 'http'}://${cookie.domain.replace(/^\./, '')}${cookie.path}`;
+      const expirationDate = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60; // Hết hạn sau 30 ngày
+      try {
+        await customSession.cookies.set({
+          url: url,
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: cookie.secure,
+          httpOnly: cookie.httpOnly,
+          expirationDate: expirationDate
+        });
+      } catch (err) {
+        console.error('Lỗi khi đổi session cookie thành persistent cookie:', err);
+      }
+    }
+  });
+
   openBatchDownloadWindow();
 
   app.on('activate', () => {
@@ -181,7 +205,9 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
+  const customSession = session.fromPartition('persist:invoice-session');
+  await customSession.cookies.flushStore();
   if (process.platform !== 'darwin') {
     app.quit();
   }

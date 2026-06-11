@@ -118,6 +118,14 @@ function initApp() {
             justify-content: space-between;
             align-items: center;
           }
+          .folder-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #5a6a85;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+          }
           .folder-text {
             font-weight: 600;
             color: #0052cc;
@@ -225,6 +233,7 @@ function initApp() {
             <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">_</button>
           </div>
           <div class="body">
+            <div class="folder-title">Thư mục lưu hóa đơn</div>
             <div class="folder-section">
               <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
               <button class="btn-small" id="btn-change-folder">Đổi</button>
