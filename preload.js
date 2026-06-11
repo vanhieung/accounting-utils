@@ -4,6 +4,7 @@ const api = {
   changeDownloadFolder: () => ipcRenderer.invoke('change-download-folder'),
   getDownloadFolder: () => ipcRenderer.invoke('get-download-folder'),
   armDownload: (payload) => ipcRenderer.invoke('arm-download', payload),
+  getWidgetIcon: () => ipcRenderer.invoke('get-widget-icon'),
   onDownloadCompleted: (callback) => {
     const listener = (event, arg) => callback(arg);
     ipcRenderer.on('download-completed', listener);
@@ -58,6 +59,39 @@ function initApp() {
             flex-direction: column;
             overflow: hidden;
             transition: all 0.3s ease;
+          }
+          .panel.minimized { display: none; }
+          .widget-btn {
+            display: none;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: #007aff;
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            cursor: pointer;
+            transition: transform 0.2s;
+            border: 2px solid white;
+          }
+          .widget-btn:hover {
+            transform: scale(1.05);
+          }
+          .widget-btn.minimized {
+            display: block;
+          }
+          .btn-minimize {
+            background: transparent;
+            border: none;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            padding: 0 5px;
+          }
+          .btn-minimize:hover {
+            opacity: 0.8;
           }
           .header {
             background: linear-gradient(90deg, #0052cc 0%, #007aff 100%);
@@ -185,9 +219,10 @@ function initApp() {
             line-height: 1.3;
           }
         </style>
-        <div class="panel">
+        <div class="panel" id="main-panel">
           <div class="header">
             <span>Công Cụ Tải Hóa Đơn</span>
+            <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">_</button>
           </div>
           <div class="body">
             <div class="folder-section">
@@ -229,6 +264,7 @@ function initApp() {
             </div>
           </div>
         </div>
+        <div class="widget-btn" id="widget-btn" title="Mở công cụ tải hóa đơn"></div>
       `;
 
       this.folderEl = this.shadow.getElementById('folder-path');
@@ -248,6 +284,23 @@ function initApp() {
       this.btnSkip.addEventListener('click', () => this.onSkip());
       this.btnStop.addEventListener('click', () => this.onStop());
       this.btnChangeFolder.addEventListener('click', () => this.onChangeFolder());
+
+      this.shadow.getElementById('btn-minimize').addEventListener('click', () => {
+        this.shadow.getElementById('main-panel').classList.add('minimized');
+        this.shadow.getElementById('widget-btn').classList.add('minimized');
+      });
+
+      this.shadow.getElementById('widget-btn').addEventListener('click', () => {
+        this.shadow.getElementById('main-panel').classList.remove('minimized');
+        this.shadow.getElementById('widget-btn').classList.remove('minimized');
+      });
+
+      // Load icon asynchronously
+      window.electronAPI.getWidgetIcon().then(base64 => {
+        if (base64) {
+          this.shadow.getElementById('widget-btn').style.backgroundImage = `url('${base64}')`;
+        }
+      });
     }
 
     updateFolder(folder) {

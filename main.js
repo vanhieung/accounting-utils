@@ -25,6 +25,7 @@ function openBatchDownloadWindow() {
   batchDownloadWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: path.join(__dirname, 'app_icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -212,5 +213,15 @@ ipcMain.handle('change-download-folder', async () => {
 
 ipcMain.handle('get-download-folder', () => {
   return downloadDestination;
+});
+
+ipcMain.handle('get-widget-icon', async () => {
+  try {
+    const iconPath = path.join(__dirname, 'widget_icon.png');
+    const data = await fsPromises.readFile(iconPath);
+    return `data:image/png;base64,${data.toString('base64')}`;
+  } catch (e) {
+    return null;
+  }
 });
 
