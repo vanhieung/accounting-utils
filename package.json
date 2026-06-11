@@ -11,7 +11,8 @@
     "appId": "com.accounting.invoice-downloader",
     "productName": "Invoice Batch Downloader",
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "app_icon.ico"
     },
     "nsis": {
       "oneClick": false,

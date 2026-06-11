@@ -719,13 +719,13 @@ const checkUrlChange = () => {
 };
 
 const originalPushState = history.pushState;
-history.pushState = function() {
+history.pushState = function () {
   originalPushState.apply(this, arguments);
   checkUrlChange();
 };
 
 const originalReplaceState = history.replaceState;
-history.replaceState = function() {
+history.replaceState = function () {
   originalReplaceState.apply(this, arguments);
   checkUrlChange();
 };
