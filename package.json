@@ -19,10 +19,22 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Tải Hóa Đơn Tự Động"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "vanhieung",
+        "repo": "accounting-utils"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vanhieung/accounting-utils.git"
   },
   "author": "AccountingApp",
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "jszip": "^3.10.1"
   },
   "devDependencies": {

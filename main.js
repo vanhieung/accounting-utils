@@ -1,8 +1,84 @@
 const { app, BrowserWindow, session, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const JSZip = require('jszip');
+
+// Cấu hình autoUpdater
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = true;
+
+// Trạng thái cập nhật
+let isCheckingForUpdates = false;
+
+// Đăng ký sự kiện updater
+autoUpdater.on('checking-for-update', () => {
+  console.log('Checking for update...');
+});
+
+autoUpdater.on('update-available', (info) => {
+  isCheckingForUpdates = false;
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Bản cập nhật mới',
+    message: `Đã có phiên bản mới (${info.version}). Bạn có muốn tải về và cài đặt không?`,
+    buttons: ['Tải và Cập nhật', 'Để sau'],
+    defaultId: 0,
+    cancelId: 1
+  }).then(result => {
+    if (result.response === 0) {
+      autoUpdater.downloadUpdate();
+      if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+        batchDownloadWindow.webContents.send('update-status', { status: 'downloading', version: info.version });
+      }
+    }
+  });
+});
+
+autoUpdater.on('update-not-available', (info) => {
+  isCheckingForUpdates = false;
+  if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+    batchDownloadWindow.webContents.send('update-status', { status: 'up-to-date', version: info.version });
+  }
+});
+
+autoUpdater.on('error', (err) => {
+  isCheckingForUpdates = false;
+  console.error('Error in auto-updater:', err);
+  if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+    batchDownloadWindow.webContents.send('update-status', { status: 'error', message: err.message });
+  }
+  dialog.showErrorBox('Lỗi cập nhật', `Không thể kiểm tra hoặc tải bản cập nhật: ${err.message || err}`);
+});
+
+autoUpdater.on('download-progress', (progressObj) => {
+  let log_message = "Download speed: " + progressObj.bytesPerSecond;
+  log_message = log_message + ' - Downloaded ' + progressObj.percent + '%';
+  log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')';
+  console.log(log_message);
+  if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+    batchDownloadWindow.webContents.send('update-status', { 
+      status: 'downloading', 
+      percent: Math.round(progressObj.percent) 
+    });
+  }
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+    batchDownloadWindow.webContents.send('update-status', { status: 'downloaded', version: info.version });
+  }
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Cập nhật sẵn sàng',
+    message: `Phiên bản mới (${info.version}) đã được tải xong. Ứng dụng sẽ khởi động lại để hoàn tất cập nhật.`,
+    buttons: ['Cài đặt ngay']
+  }).then(() => {
+    autoUpdater.quitAndInstall();
+  });
+});
+
 
 // Cấu hình thư mục lưu mặc định
 let downloadDestination = path.join(app.getPath('downloads'), 'InvoicesAuto');
@@ -171,16 +247,6 @@ function openBatchDownloadWindow() {
   batchDownloadWindow.loadURL('https://hoadondientu.gdt.gov.vn/');
 }
 
-app.whenReady().then(() => {
-  openBatchDownloadWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      openBatchDownloadWindow();
-    }
-  });
-});
-
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
@@ -224,4 +290,38 @@ ipcMain.handle('get-widget-icon', async () => {
     return null;
   }
 });
+
+// Yêu cầu kiểm tra cập nhật từ Renderer
+ipcMain.handle('check-for-updates', async () => {
+  if (isCheckingForUpdates) {
+    return { success: false, message: 'Đang kiểm tra cập nhật...' };
+  }
+  isCheckingForUpdates = true;
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, updateInfo: result ? result.updateInfo : null };
+  } catch (error) {
+    isCheckingForUpdates = false;
+    return { success: false, error: error.message };
+  }
+});
+
+// Tự động kiểm tra khi sẵn sàng
+app.whenReady().then(() => {
+  openBatchDownloadWindow();
+
+  // Đợi cửa sổ hiển thị một chút rồi check cập nhật tự động
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(err => {
+      console.error('Failed to auto check for updates:', err);
+    });
+  }, 3000);
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      openBatchDownloadWindow();
+    }
+  });
+});
+
 

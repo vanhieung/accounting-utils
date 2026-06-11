@@ -11,6 +11,14 @@ const api = {
     return () => {
       ipcRenderer.removeListener('download-completed', listener);
     };
+  },
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  onUpdateStatus: (callback) => {
+    const listener = (event, arg) => callback(arg);
+    ipcRenderer.on('update-status', listener);
+    return () => {
+      ipcRenderer.removeListener('update-status', listener);
+    };
   }
 };
 
@@ -227,7 +235,10 @@ function initApp() {
           <div class="body">
             <div class="folder-section">
               <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
-              <button class="btn-small" id="btn-change-folder">Đổi</button>
+              <div style="display: flex; gap: 4px; flex-shrink: 0;">
+                <button class="btn-small" id="btn-change-folder">Đổi</button>
+                <button class="btn-small" id="btn-check-update" style="background: #28c76f;">Cập nhật</button>
+              </div>
             </div>
             
             <div class="stats-grid">
@@ -279,11 +290,22 @@ function initApp() {
       this.btnSkip = this.shadow.getElementById('btn-skip');
       this.btnStop = this.shadow.getElementById('btn-stop');
       this.btnChangeFolder = this.shadow.getElementById('btn-change-folder');
+      this.btnCheckUpdate = this.shadow.getElementById('btn-check-update');
 
       this.btnStart.addEventListener('click', () => this.onStart());
       this.btnSkip.addEventListener('click', () => this.onSkip());
       this.btnStop.addEventListener('click', () => this.onStop());
       this.btnChangeFolder.addEventListener('click', () => this.onChangeFolder());
+
+      this.btnCheckUpdate.addEventListener('click', async () => {
+        this.log('[Cập nhật] Đang kiểm tra phiên bản mới từ GitHub...');
+        this.btnCheckUpdate.disabled = true;
+        const res = await window.electronAPI.checkForUpdates();
+        this.btnCheckUpdate.disabled = false;
+        if (res && !res.success) {
+          this.log(`[Cập nhật] Kiểm tra thất bại: ${res.error || res.message || 'Lỗi không xác định'}`);
+        }
+      });
 
       this.shadow.getElementById('btn-minimize').addEventListener('click', () => {
         this.shadow.getElementById('main-panel').classList.add('minimized');
@@ -293,6 +315,19 @@ function initApp() {
       this.shadow.getElementById('widget-btn').addEventListener('click', () => {
         this.shadow.getElementById('main-panel').classList.remove('minimized');
         this.shadow.getElementById('widget-btn').classList.remove('minimized');
+      });
+
+      // Lắng nghe trạng thái cập nhật từ Main Process
+      window.electronAPI.onUpdateStatus((info) => {
+        if (info.status === 'downloading') {
+          this.log(`[Cập nhật] Đang tải: ${info.percent || 0}%`);
+        } else if (info.status === 'downloaded') {
+          this.log(`[Cập nhật] Đã tải xong bản cập nhật v${info.version}!`);
+        } else if (info.status === 'up-to-date') {
+          this.log(`[Cập nhật] Ứng dụng đã ở phiên bản mới nhất.`);
+        } else if (info.status === 'error') {
+          this.log(`[Cập nhật] Lỗi: ${info.message}`);
+        }
       });
 
       // Load icon asynchronously
