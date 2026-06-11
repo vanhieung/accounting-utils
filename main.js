@@ -9,25 +9,9 @@ if (!fs.existsSync(downloadDestination)) {
   fs.mkdirSync(downloadDestination, { recursive: true });
 }
 
-let dashboardWindow;
 let batchDownloadWindow;
 let pendingOperations = [];
 let customSessionInitialized = false;
-
-function createDashboardWindow() {
-  dashboardWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload-dashboard.js'),
-      contextIsolation: true,
-      nodeIntegration: false
-    },
-    autoHideMenuBar: true,
-  });
-
-  dashboardWindow.loadFile('index.html');
-}
 
 function openBatchDownloadWindow() {
   if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
@@ -96,11 +80,77 @@ function openBatchDownloadWindow() {
       }
     });
     
-    item.once('done', (event, state) => {
+    item.once('done', async (event, state) => {
       if (state === 'completed') {
         console.log('Download successfully:', savePath);
+        
+        let finalStatus = 'success';
+        let failReason = null;
+
+        // Tự động giải nén XML và xoá ZIP
+        if (savePath.toLowerCase().endsWith('.zip')) {
+          try {
+            const fileData = fs.readFileSync(savePath);
+            const zip = await JSZip.loadAsync(fileData);
+            let extractedCount = 0;
+            const promises = [];
+            
+            const destDir = path.dirname(savePath);
+            const baseName = path.basename(savePath, '.zip');
+
+            zip.forEach((relativePath, zipEntry) => {
+              const entryName = zipEntry.name.toLowerCase();
+              if (!zipEntry.dir && (entryName === 'invoice.xml' || entryName.endsWith('/invoice.xml'))) {
+                promises.push(new Promise(async (resolve, reject) => {
+                  try {
+                    const content = await zipEntry.async("nodebuffer");
+                    let destFileName = `${baseName}.xml`;
+                    let destPath = path.join(destDir, destFileName);
+                    
+                    let counter = 1;
+                    while (fs.existsSync(destPath)) {
+                      destFileName = `${baseName}_${counter}.xml`;
+                      destPath = path.join(destDir, destFileName);
+                      counter++;
+                    }
+                    
+                    fs.writeFileSync(destPath, content);
+                    extractedCount++;
+                    resolve();
+                  } catch (err) {
+                    reject(err);
+                  }
+                }));
+              }
+            });
+            
+            await Promise.all(promises);
+            
+            // Nếu giải nén thành công, xoá file zip
+            if (extractedCount > 0) {
+              try {
+                fs.unlinkSync(savePath);
+                console.log('Extracted XML and deleted ZIP:', savePath);
+              } catch(e) {
+                console.error('Không thể xóa file ZIP:', e);
+              }
+            } else {
+              console.log('No invoice.xml found in ZIP:', savePath);
+            }
+          } catch (err) {
+            console.error('Error extracting ZIP:', err);
+            finalStatus = 'error';
+            failReason = 'Lỗi giải nén ZIP';
+          }
+        }
+
         if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
-          batchDownloadWindow.webContents.send('download-completed', { operationId: opId, fileName, status: 'success' });
+          batchDownloadWindow.webContents.send('download-completed', { 
+            operationId: opId, 
+            fileName, 
+            status: finalStatus,
+            reason: failReason 
+          });
         }
       } else {
         console.log(`Download failed: ${state}`);
@@ -116,11 +166,11 @@ function openBatchDownloadWindow() {
 }
 
 app.whenReady().then(() => {
-  createDashboardWindow();
+  openBatchDownloadWindow();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createDashboardWindow();
+      openBatchDownloadWindow();
     }
   });
 });
@@ -155,89 +205,3 @@ ipcMain.handle('get-download-folder', () => {
   return downloadDestination;
 });
 
-// === IPC Handlers for Account Utils ===
-ipcMain.on('open-batch-download', () => {
-  openBatchDownloadWindow();
-});
-
-ipcMain.handle('select-zips', async () => {
-  const result = await dialog.showOpenDialog(dashboardWindow, {
-    properties: ['openFile', 'multiSelections'],
-    filters: [
-      { name: 'ZIP Files', extensions: ['zip'] }
-    ]
-  });
-  if (result.canceled) {
-    return [];
-  } else {
-    return result.filePaths.map(fp => ({
-      name: path.basename(fp),
-      path: fp
-    }));
-  }
-});
-
-ipcMain.handle('select-directory', async () => {
-  const result = await dialog.showOpenDialog(dashboardWindow, {
-    properties: ['openDirectory']
-  });
-  if (result.canceled) {
-    return null;
-  } else {
-    return result.filePaths[0];
-  }
-});
-
-ipcMain.handle('extract-zips', async (event, { filePaths, destDir }) => {
-  const results = [];
-
-  for (let i = 0; i < filePaths.length; i++) {
-    const filePath = filePaths[i];
-    try {
-      const fileName = path.basename(filePath, path.extname(filePath));
-      const fileData = fs.readFileSync(filePath);
-      const zip = await JSZip.loadAsync(fileData);
-      
-      let extractedCount = 0;
-      const promises = [];
-      
-      zip.forEach((relativePath, zipEntry) => {
-        const entryName = zipEntry.name.toLowerCase();
-        if (!zipEntry.dir && (entryName === 'invoice.xml' || entryName.endsWith('/invoice.xml'))) {
-          promises.push(new Promise(async (resolve, reject) => {
-            try {
-              const content = await zipEntry.async("nodebuffer");
-              
-              let destFileName = `${fileName}_invoice.xml`;
-              let destPath = path.join(destDir, destFileName);
-              
-              let counter = 1;
-              while (fs.existsSync(destPath)) {
-                destFileName = `${fileName}_invoice_${counter}.xml`;
-                destPath = path.join(destDir, destFileName);
-                counter++;
-              }
-              
-              fs.writeFileSync(destPath, content);
-              extractedCount++;
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          }));
-        }
-      });
-      
-      await Promise.all(promises);
-      if (extractedCount > 0) {
-        results.push({ file: path.basename(filePath), status: 'success', msg: `Đã trích xuất ${extractedCount} file invoice.xml` });
-      } else {
-        results.push({ file: path.basename(filePath), status: 'warning', msg: 'Không tìm thấy invoice.xml' });
-      }
-    } catch (err) {
-      console.error(err);
-      results.push({ file: path.basename(filePath), status: 'error', error: err.message });
-    }
-  }
-  return results;
-});

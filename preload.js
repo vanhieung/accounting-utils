@@ -187,7 +187,7 @@ function initApp() {
         </style>
         <div class="panel">
           <div class="header">
-            <span>Tải Hóa Đơn Siêu Tốc (App)</span>
+            <span>Công Cụ Tải Hóa Đơn</span>
           </div>
           <div class="body">
             <div class="folder-section">
@@ -487,7 +487,6 @@ function initApp() {
           }
           this.failureCount++;
           this.ui.log(`Lỗi dòng ${i + 1}: ${e.message}`);
-          await this.wait(1000);
         } finally {
           this.skipController = null;
           this.ui.updateStats(i + 1, totalRows, this.successCount, this.failureCount, this.currentPage);
@@ -542,6 +541,21 @@ function initApp() {
       return new Promise((resolve, reject) => {
         let cleanup = () => { };
 
+        // Kiểm tra thông báo lỗi từ web (VD: .ant-message-error) để next ngay lập tức thay vì chờ 15s
+        const errorCheckInterval = setInterval(() => {
+          const errorMsg = document.querySelector('.ant-message-error, .ant-message-notice-error, .ant-notification-notice-error, .ant-message-custom-content.ant-message-error');
+          if (errorMsg && errorMsg.innerText) {
+            const errorText = errorMsg.innerText;
+            // Cố gắng đóng thông báo để không ảnh hưởng dòng sau
+            const closeBtn = document.querySelector('.ant-message-notice-close, .ant-notification-notice-close');
+            if (closeBtn) closeBtn.click();
+            else errorMsg.remove(); // Fallback xóa khỏi DOM
+
+            cleanup();
+            reject(new Error(`Hệ thống web báo lỗi: ${errorText}`));
+          }
+        }, 500);
+
         const timeoutId = setTimeout(() => {
           cleanup();
           reject(new Error('Quá 15 giây chờ file tải về'));
@@ -560,6 +574,7 @@ function initApp() {
 
         cleanup = () => {
           clearTimeout(timeoutId);
+          clearInterval(errorCheckInterval);
           unsubscribe();
         };
 
