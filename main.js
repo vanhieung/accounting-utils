@@ -52,6 +52,10 @@ function openBatchDownloadWindow() {
       let opId = null;
       if (matchedOpIndex >= 0) {
         opId = pendingOperations[matchedOpIndex].operationId;
+        // Hủy timer no-download-started vì download đã bắt đầu
+        if (pendingOperations[matchedOpIndex].noDownloadTimer) {
+          clearTimeout(pendingOperations[matchedOpIndex].noDownloadTimer);
+        }
         pendingOperations.splice(matchedOpIndex, 1);
       }
 
@@ -217,11 +221,34 @@ app.on('window-all-closed', async () => {
 ipcMain.handle('arm-download', (event, payload) => {
   const now = Date.now();
   // Dọn dẹp memory leak
-  pendingOperations = pendingOperations.filter(op => now - op.timestamp < 60000);
+  pendingOperations = pendingOperations.filter(op => {
+    if (now - op.timestamp >= 60000) {
+      if (op.noDownloadTimer) clearTimeout(op.noDownloadTimer);
+      return false;
+    }
+    return true;
+  });
+
+  // Timer: nếu sau 2 giây không có will-download event nào, báo lỗi cho renderer
+  const noDownloadTimer = setTimeout(() => {
+    const opIndex = pendingOperations.findIndex(op => op.operationId === payload.operationId);
+    if (opIndex >= 0) {
+      pendingOperations.splice(opIndex, 1);
+      if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+        batchDownloadWindow.webContents.send('download-completed', {
+          operationId: payload.operationId,
+          fileName: null,
+          status: 'error',
+          reason: 'Không có file nào được tải về (server không trả file)'
+        });
+      }
+    }
+  }, 2000);
 
   pendingOperations.push({
     operationId: payload.operationId,
-    timestamp: now
+    timestamp: now,
+    noDownloadTimer: noDownloadTimer
   });
   return { success: true };
 });

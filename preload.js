@@ -404,7 +404,7 @@ function initApp() {
 
       this.behavior = {
         selectionDelayMs: 100,
-        downloadTimeoutMs: 15000 // 15s timeout cho server chậm
+        downloadTimeoutMs: 5000 // 5s timeout — main process phát hiện "không có file" sau 2s
       };
 
       // Đọc thư mục tải ban đầu
@@ -543,12 +543,19 @@ function initApp() {
         try {
           await this.downloadRow(currentRow, i, signal, this.skipController.signal);
           this.successCount++;
+          this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
         } catch (e) {
           if (e.name === 'AbortError' && e.message !== 'Người dùng bấm Bỏ qua') {
             throw e;
           }
           this.failureCount++;
-          this.ui.log(`Lỗi dòng ${i + 1}: ${e.message}`);
+          if (e.message === 'Người dùng bấm Bỏ qua') {
+            this.ui.log(`⏭ Dòng ${i + 1}: Bỏ qua (người dùng).`);
+          } else if (e.message.includes('không có file') || e.message.includes('Không có file') || e.message.includes('server không trả file')) {
+            this.ui.log(`⏭ Dòng ${i + 1}: Bỏ qua — server không trả file.`);
+          } else {
+            this.ui.log(`✗ Dòng ${i + 1}: ${e.message}`);
+          }
         } finally {
           this.skipController = null;
           this.ui.updateStats(i + 1, totalRows, this.successCount, this.failureCount, this.currentPage);
@@ -601,9 +608,10 @@ function initApp() {
       dlBtn.click();
 
       return new Promise((resolve, reject) => {
+        let cleaned = false;
         let cleanup = () => { };
 
-        // Kiểm tra thông báo lỗi từ web (VD: .ant-message-error) để next ngay lập tức thay vì chờ 15s
+        // Kiểm tra thông báo lỗi từ web (VD: .ant-message-error) để skip ngay lập tức
         const errorCheckInterval = setInterval(() => {
           const errorMsg = document.querySelector('.ant-message-error, .ant-message-notice-error, .ant-notification-notice-error, .ant-message-custom-content.ant-message-error');
           if (errorMsg && errorMsg.innerText) {
@@ -618,23 +626,28 @@ function initApp() {
           }
         }, 500);
 
+        // Timeout dự phòng — main process sẽ gửi lỗi sau 2s nếu không có file,
+        // timer này là safety net cuối cùng
         const timeoutId = setTimeout(() => {
           cleanup();
-          reject(new Error('Quá 15 giây chờ file tải về'));
+          reject(new Error('Quá thời gian chờ file tải về — bỏ qua'));
         }, this.behavior.downloadTimeoutMs);
 
         // Đăng ký nhận sự kiện hoàn tất tải từ Electron Main Process
+        // (bao gồm cả event "no file" do main process timeout gửi)
         const unsubscribe = window.electronAPI.onDownloadCompleted((result) => {
           if (result.operationId !== operationId) return; // Bỏ qua nếu không đúng dòng đang đợi
           cleanup();
           if (result.status === 'success') {
             resolve();
           } else {
-            reject(new Error(`Tải lỗi: ${result.reason || 'không rõ'}`));
+            reject(new Error(result.reason || 'Tải lỗi không rõ nguyên nhân'));
           }
         });
 
         cleanup = () => {
+          if (cleaned) return;
+          cleaned = true;
           clearTimeout(timeoutId);
           clearInterval(errorCheckInterval);
           unsubscribe();
