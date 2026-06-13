@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, session, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
@@ -266,6 +266,11 @@ ipcMain.handle('change-download-folder', async () => {
 
 ipcMain.handle('get-download-folder', () => {
   return downloadDestination;
+});
+
+ipcMain.handle('open-folder', (event, folderPath) => {
+  const target = folderPath || downloadDestination;
+  shell.openPath(target);
 });
 
 ipcMain.handle('get-widget-icon', async () => {

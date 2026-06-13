@@ -5,6 +5,7 @@ const api = {
   getDownloadFolder: () => ipcRenderer.invoke('get-download-folder'),
   armDownload: (payload) => ipcRenderer.invoke('arm-download', payload),
   getWidgetIcon: () => ipcRenderer.invoke('get-widget-icon'),
+  openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   onDownloadCompleted: (callback) => {
     const listener = (event, arg) => callback(arg);
     ipcRenderer.on('download-completed', listener);
@@ -226,6 +227,102 @@ function initApp() {
             margin-bottom: 3px;
             line-height: 1.3;
           }
+          /* Toast notification */
+          .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: none;
+          }
+          .toast {
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            padding: 12px 16px;
+            border-radius: 10px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 13px;
+            min-width: 280px;
+            max-width: 380px;
+            animation: toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            backdrop-filter: blur(12px);
+            border-left: 3px solid #28c76f;
+          }
+          .toast.toast-hiding {
+            animation: toastSlideOut 0.35s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+          }
+          .toast-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+          }
+          .toast-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+          }
+          .toast-msg {
+            font-weight: 500;
+            line-height: 1.3;
+          }
+          .toast-actions {
+            display: flex;
+            gap: 8px;
+          }
+          .toast-btn {
+            padding: 5px 12px;
+            border-radius: 6px;
+            border: none;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          }
+          .toast-btn-primary {
+            background: linear-gradient(135deg, #28c76f 0%, #1fa85c 100%);
+            color: white;
+          }
+          .toast-btn-primary:hover {
+            background: linear-gradient(135deg, #34d87b 0%, #28c76f 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(40, 199, 111, 0.35);
+          }
+          .toast-btn-dismiss {
+            background: rgba(255,255,255,0.08);
+            color: #a0a0a0;
+          }
+          .toast-btn-dismiss:hover {
+            background: rgba(255,255,255,0.15);
+            color: #e0e0e0;
+          }
+          @keyframes toastSlideIn {
+            from {
+              transform: translateX(120%);
+              opacity: 0;
+            }
+            to {
+              transform: translateX(0);
+              opacity: 1;
+            }
+          }
+          @keyframes toastSlideOut {
+            from {
+              transform: translateX(0);
+              opacity: 1;
+            }
+            to {
+              transform: translateX(120%);
+              opacity: 0;
+            }
+          }
         </style>
         <div class="panel" id="main-panel">
           <div class="header">
@@ -361,6 +458,49 @@ function initApp() {
       this.logContainer.scrollTop = this.logContainer.scrollHeight;
     }
 
+    showToast(message, { actionLabel, onAction, autoDismissMs = 8000 } = {}) {
+      // Ensure toast container exists
+      let toastContainer = this.shadow.querySelector('.toast-container');
+      if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container';
+        this.shadow.appendChild(toastContainer);
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `
+        <span class="toast-icon">✅</span>
+        <div class="toast-body">
+          <div class="toast-msg">${message}</div>
+          <div class="toast-actions">
+            ${actionLabel ? `<button class="toast-btn toast-btn-primary" id="toast-action">${actionLabel}</button>` : ''}
+            <button class="toast-btn toast-btn-dismiss" id="toast-dismiss">Đóng</button>
+          </div>
+        </div>
+      `;
+
+      toastContainer.appendChild(toast);
+
+      const dismiss = () => {
+        toast.classList.add('toast-hiding');
+        toast.addEventListener('animationend', () => toast.remove(), { once: true });
+      };
+
+      toast.querySelector('#toast-dismiss').addEventListener('click', dismiss);
+
+      if (actionLabel && onAction) {
+        toast.querySelector('#toast-action').addEventListener('click', () => {
+          onAction();
+          dismiss();
+        });
+      }
+
+      if (autoDismissMs > 0) {
+        setTimeout(dismiss, autoDismissMs);
+      }
+    }
+
     makeDraggable() {
       const header = this.shadow.querySelector('.header');
       let isDragging = false;
@@ -472,6 +612,17 @@ function initApp() {
         if (!signal.aborted) {
           this.setState('COMPLETED');
           this.ui.log('Hoàn tất tải toàn bộ hóa đơn!');
+
+          // Show toast to open the download folder
+          const folder = await window.electronAPI.getDownloadFolder();
+          this.ui.showToast(
+            `Đã tải xong ${this.successCount} hóa đơn thành công!`,
+            {
+              actionLabel: '📂 Mở thư mục',
+              onAction: () => window.electronAPI.openFolder(folder),
+              autoDismissMs: 15000
+            }
+          );
         }
       } catch (e) {
         if (e.name === 'AbortError') {
