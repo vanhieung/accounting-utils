@@ -482,7 +482,7 @@ function initApp() {
         <div class="panel" id="main-panel">
           <div class="header">
             <div class="header-left">
-              <span>Công Cụ Tải Hóa Đơn</span>
+              <span>Công Cụ Tải Hóa Đơn1</span>
               <span class="version-badge" id="version-badge">v--</span>
             </div>
             <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">_</button>

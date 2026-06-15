@@ -26,6 +26,8 @@ function openBatchDownloadWindow() {
   batchDownloadWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    show: false, // Ẩn window khi mới tạo để tránh màn hình trắng
+    backgroundColor: '#ffffff', // Set màu nền để nếu có delay cũng không bị chói
     icon: path.join(__dirname, 'app_icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -33,6 +35,34 @@ function openBatchDownloadWindow() {
       contextIsolation: true,
       sandbox: true,
       partition: 'persist:invoice-session'
+    }
+  });
+
+  // Chỉ hiện window khi đã render xong HTML/CSS (khắc phục lỗi màn hình trắng)
+  batchDownloadWindow.once('ready-to-show', () => {
+    batchDownloadWindow.show();
+  });
+
+  // Xử lý khi load trang bị lỗi (mất mạng, timeout, server sập...)
+  batchDownloadWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('Lỗi tải trang:', errorDescription);
+    // Tự động tải lại sau 5 giây nếu lỗi
+    setTimeout(() => {
+      if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+        batchDownloadWindow.loadURL('https://hoadondientu.gdt.gov.vn/');
+      }
+    }, 5000);
+  });
+
+  // Xử lý khi tiến trình render bị crash (màn hình trắng)
+  batchDownloadWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('Renderer process bị crash:', details.reason);
+    if (details.reason === 'crashed' || details.reason === 'oom') {
+      setTimeout(() => {
+        if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+          batchDownloadWindow.reload();
+        }
+      }, 1000);
     }
   });
 
