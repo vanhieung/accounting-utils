@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const JSZip = require('jszip');
+const { autoUpdater } = require('electron-updater');
 
 // Cấu hình thư mục lưu mặc định
 let downloadDestination = path.join(app.getPath('downloads'), 'InvoicesAuto');
@@ -202,6 +203,75 @@ app.whenReady().then(() => {
 
   openBatchDownloadWindow();
 
+  // === Auto-Updater Setup ===
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  // Forward update events to renderer
+  function sendUpdateStatus(channel, data) {
+    if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
+      batchDownloadWindow.webContents.send(channel, data);
+    }
+  }
+
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateStatus('update-status', { status: 'checking' });
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    sendUpdateStatus('update-status', {
+      status: 'available',
+      version: info.version,
+      releaseNotes: info.releaseNotes || '',
+      releaseDate: info.releaseDate || ''
+    });
+  });
+
+  autoUpdater.on('update-not-available', (info) => {
+    sendUpdateStatus('update-status', {
+      status: 'not-available',
+      version: info.version
+    });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    sendUpdateStatus('update-status', {
+      status: 'downloading',
+      percent: progress.percent,
+      transferred: progress.transferred,
+      total: progress.total,
+      bytesPerSecond: progress.bytesPerSecond
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    sendUpdateStatus('update-status', {
+      status: 'downloaded',
+      version: info.version
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    sendUpdateStatus('update-status', {
+      status: 'error',
+      message: err.message || 'Lỗi kiểm tra cập nhật'
+    });
+  });
+
+  // Check for updates on startup (delay 5s to let app fully load)
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(err => {
+      console.error('Auto-update check failed:', err);
+    });
+  }, 5000);
+
+  // Periodically check for updates every 30 minutes
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(err => {
+      console.error('Periodic update check failed:', err);
+    });
+  }, 30 * 60 * 1000);
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       openBatchDownloadWindow();
@@ -283,3 +353,29 @@ ipcMain.handle('get-widget-icon', async () => {
   }
 });
 
+// === Auto-Update IPC Handlers ===
+ipcMain.handle('check-for-update', async () => {
+  try {
+    const result = await autoUpdater.checkForUpdates();
+    return { success: true, version: result?.updateInfo?.version };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('download-update', async () => {
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('install-update', () => {
+  autoUpdater.quitAndInstall(false, true);
+});
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});

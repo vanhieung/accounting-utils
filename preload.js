@@ -12,6 +12,18 @@ const api = {
     return () => {
       ipcRenderer.removeListener('download-completed', listener);
     };
+  },
+  // Auto-update APIs
+  checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  onUpdateStatus: (callback) => {
+    const listener = (event, arg) => callback(arg);
+    ipcRenderer.on('update-status', listener);
+    return () => {
+      ipcRenderer.removeListener('update-status', listener);
+    };
   }
 };
 
@@ -323,11 +335,177 @@ function initApp() {
               opacity: 0;
             }
           }
+
+          /* Update notification banner */
+          .update-banner {
+            display: none;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #e0e0e0;
+            border-top: 1px solid rgba(255,255,255,0.06);
+            animation: updateSlideDown 0.3s ease;
+          }
+          .update-banner.visible {
+            display: block;
+          }
+          .update-banner-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+          }
+          .update-banner-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+            color: #60a5fa;
+          }
+          .update-banner-title .update-icon {
+            font-size: 14px;
+          }
+          .update-banner-close {
+            background: transparent;
+            border: none;
+            color: #8899a6;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 4px;
+            border-radius: 4px;
+          }
+          .update-banner-close:hover {
+            background: rgba(255,255,255,0.1);
+            color: #e0e0e0;
+          }
+          .update-banner-msg {
+            font-size: 11px;
+            color: #a0b0c0;
+            margin-bottom: 8px;
+            line-height: 1.4;
+          }
+          .update-banner-actions {
+            display: flex;
+            gap: 6px;
+          }
+          .update-btn {
+            flex: 1;
+            padding: 7px 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          }
+          .update-btn-primary {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+          }
+          .update-btn-primary:hover {
+            background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+          }
+          .update-btn-secondary {
+            background: rgba(255,255,255,0.08);
+            color: #a0b0c0;
+          }
+          .update-btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+            color: #e0e0e0;
+          }
+          .update-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+          }
+          .update-progress {
+            margin-top: 8px;
+          }
+          .update-progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+          }
+          .update-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+          }
+          .update-progress-text {
+            font-size: 10px;
+            color: #8899a6;
+            margin-top: 4px;
+            text-align: center;
+          }
+          .version-badge {
+            font-size: 10px;
+            background: rgba(255,255,255,0.2);
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-weight: 500;
+            margin-left: 6px;
+          }
+          .header-left {
+            display: flex;
+            align-items: center;
+          }
+          @keyframes updateSlideDown {
+            from {
+              opacity: 0;
+              max-height: 0;
+            }
+            to {
+              opacity: 1;
+              max-height: 200px;
+            }
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #60a5fa;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+          }
         </style>
         <div class="panel" id="main-panel">
           <div class="header">
-            <span>Công Cụ Tải Hóa Đơn</span>
+            <div class="header-left">
+              <span>Công Cụ Tải Hóa Đơn</span>
+              <span class="version-badge" id="version-badge">v--</span>
+            </div>
             <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">_</button>
+          </div>
+          <div id="update-banner" class="update-banner">
+            <div class="update-banner-header">
+              <div class="update-banner-title">
+                <span class="update-icon">🔄</span>
+                <span id="update-title">Có bản cập nhật mới!</span>
+              </div>
+              <button class="update-banner-close" id="update-dismiss" title="Đóng">✕</button>
+            </div>
+            <div class="update-banner-msg" id="update-msg">Phiên bản mới đã sẵn sàng.</div>
+            <div class="update-banner-actions" id="update-actions">
+              <button class="update-btn update-btn-primary" id="update-download-btn">⬇ Tải cập nhật</button>
+              <button class="update-btn update-btn-secondary" id="update-later-btn">Để sau</button>
+            </div>
+            <div class="update-progress" id="update-progress" style="display:none">
+              <div class="update-progress-bar-bg">
+                <div class="update-progress-bar" id="update-progress-bar"></div>
+              </div>
+              <div class="update-progress-text" id="update-progress-text">0%</div>
+            </div>
           </div>
           <div class="body">
             <div class="folder-title">Thư mục lưu hóa đơn</div>
@@ -386,6 +564,18 @@ function initApp() {
       this.btnStop = this.shadow.getElementById('btn-stop');
       this.btnChangeFolder = this.shadow.getElementById('btn-change-folder');
 
+      // Update UI elements
+      this.updateBanner = this.shadow.getElementById('update-banner');
+      this.updateTitle = this.shadow.getElementById('update-title');
+      this.updateMsg = this.shadow.getElementById('update-msg');
+      this.updateActions = this.shadow.getElementById('update-actions');
+      this.updateDownloadBtn = this.shadow.getElementById('update-download-btn');
+      this.updateLaterBtn = this.shadow.getElementById('update-later-btn');
+      this.updateProgress = this.shadow.getElementById('update-progress');
+      this.updateProgressBar = this.shadow.getElementById('update-progress-bar');
+      this.updateProgressText = this.shadow.getElementById('update-progress-text');
+      this.versionBadge = this.shadow.getElementById('version-badge');
+
       this.btnStart.addEventListener('click', () => this.onStart());
       this.btnSkip.addEventListener('click', () => this.onSkip());
       this.btnStop.addEventListener('click', () => this.onStop());
@@ -407,6 +597,96 @@ function initApp() {
           this.shadow.getElementById('widget-btn').style.backgroundImage = `url('${base64}')`;
         }
       });
+
+      // Load version badge
+      window.electronAPI.getAppVersion().then(version => {
+        this.versionBadge.textContent = `v${version}`;
+      });
+
+      // Update button event listeners
+      this.updateDownloadBtn.addEventListener('click', () => {
+        this.updateDownloadBtn.disabled = true;
+        this.updateDownloadBtn.innerHTML = '<span class="spinner"></span> Đang tải...';
+        window.electronAPI.downloadUpdate();
+      });
+
+      this.updateLaterBtn.addEventListener('click', () => {
+        this.updateBanner.classList.remove('visible');
+      });
+
+      this.shadow.getElementById('update-dismiss').addEventListener('click', () => {
+        this.updateBanner.classList.remove('visible');
+      });
+    }
+
+    handleUpdateStatus(data) {
+      switch (data.status) {
+        case 'checking':
+          // Silently checking — no UI change
+          break;
+
+        case 'available':
+          this.updateBanner.classList.add('visible');
+          this.updateTitle.textContent = `Có bản cập nhật v${data.version}!`;
+          this.updateMsg.textContent = data.releaseNotes
+            ? `${data.releaseNotes}`
+            : `Phiên bản ${data.version} đã sẵn sàng. Nhấn "Tải cập nhật" để nâng cấp.`;
+          this.updateActions.style.display = 'flex';
+          this.updateProgress.style.display = 'none';
+          this.updateDownloadBtn.disabled = false;
+          this.updateDownloadBtn.innerHTML = '⬇ Tải cập nhật';
+          this.log(`🔄 Phát hiện bản cập nhật v${data.version}`);
+          break;
+
+        case 'not-available':
+          // No update — do nothing (silent)
+          break;
+
+        case 'downloading':
+          this.updateBanner.classList.add('visible');
+          this.updateTitle.textContent = 'Đang tải cập nhật...';
+          this.updateActions.style.display = 'none';
+          this.updateProgress.style.display = 'block';
+          const pct = Math.round(data.percent || 0);
+          this.updateProgressBar.style.width = `${pct}%`;
+          const mbTransferred = (data.transferred / 1024 / 1024).toFixed(1);
+          const mbTotal = (data.total / 1024 / 1024).toFixed(1);
+          const speed = (data.bytesPerSecond / 1024).toFixed(0);
+          this.updateProgressText.textContent = `${pct}% — ${mbTransferred}/${mbTotal} MB (${speed} KB/s)`;
+          this.updateMsg.textContent = 'Đang tải phiên bản mới. Vui lòng chờ...';
+          break;
+
+        case 'downloaded':
+          this.updateBanner.classList.add('visible');
+          this.updateTitle.textContent = '✅ Đã tải xong cập nhật!';
+          this.updateMsg.textContent = `Phiên bản v${data.version} đã sẵn sàng cài đặt. Ứng dụng sẽ khởi động lại.`;
+          this.updateProgress.style.display = 'none';
+          this.updateActions.style.display = 'flex';
+          this.updateDownloadBtn.disabled = false;
+          this.updateDownloadBtn.innerHTML = '🚀 Cài đặt và khởi động lại';
+          this.updateDownloadBtn.onclick = () => {
+            window.electronAPI.installUpdate();
+          };
+          this.updateLaterBtn.textContent = 'Để sau';
+          this.log(`✅ Tải cập nhật v${data.version} hoàn tất. Sẵn sàng cài đặt.`);
+          break;
+
+        case 'error':
+          // Show error briefly then hide
+          this.updateBanner.classList.add('visible');
+          this.updateTitle.textContent = '⚠ Lỗi cập nhật';
+          this.updateMsg.textContent = data.message || 'Không thể kiểm tra cập nhật.';
+          this.updateActions.style.display = 'flex';
+          this.updateDownloadBtn.style.display = 'none';
+          this.updateLaterBtn.textContent = 'Đóng';
+          this.updateProgress.style.display = 'none';
+          setTimeout(() => {
+            this.updateBanner.classList.remove('visible');
+            this.updateDownloadBtn.style.display = '';
+            this.updateLaterBtn.textContent = 'Để sau';
+          }, 8000);
+          break;
+      }
     }
 
     updateFolder(folder) {
@@ -556,6 +836,13 @@ function initApp() {
           this.changeFolder.bind(this),
           folder
         );
+
+        // Listen for update events and forward to UI
+        window.electronAPI.onUpdateStatus((data) => {
+          if (this.ui) {
+            this.ui.handleUpdateStatus(data);
+          }
+        });
       });
     }
 

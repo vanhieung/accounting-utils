@@ -3,13 +3,26 @@
   "version": "1.0.0",
   "description": "Auto download invoices",
   "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vanhieung/accounting-utils.git"
+  },
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win",
+    "publish": "electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.accounting.invoice-downloader",
     "productName": "Invoice Batch Downloader",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "vanhieung",
+        "repo": "accounting-utils",
+        "releaseType": "release"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "app_icon.ico"
@@ -24,6 +37,7 @@
   },
   "author": "AccountingApp",
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "jszip": "^3.10.1"
   },
   "devDependencies": {
