@@ -22,7 +22,7 @@ publish:
 # Lệnh để tăng version patch, push code và publish
 patch:
 	git add .
-	git commit -m "chore: release patch" || true
+	git commit -m "chore: release patch"
 	npm version patch
 	git push
 	git push --tags
