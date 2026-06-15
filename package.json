@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
-    "publish": "electron-builder --win --publish always"
+    "publish": "dotenv -- electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.accounting.invoice-downloader",
@@ -41,6 +41,7 @@
     "jszip": "^3.10.1"
   },
   "devDependencies": {
+    "dotenv-cli": "^11.0.0",
     "electron": "^42.4.0",
     "electron-builder": "^26.15.2"
   }

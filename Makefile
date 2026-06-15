@@ -22,7 +22,7 @@ publish:
 # Lệnh để tăng version patch, push code và publish
 patch:
 	git add .
-	git commit -m "chore: release patch"
+	-git commit -m "chore: release patch"
 	npm version patch
 	git push
 	git push --tags
@@ -31,7 +31,7 @@ patch:
 # Lệnh để tăng version minor, push code và publish
 minor:
 	git add .
-	git commit -m "chore: release minor" || true
+	-git commit -m "chore: release minor"
 	npm version minor
 	git push
 	git push --tags
@@ -40,7 +40,7 @@ minor:
 # Lệnh để tăng version major, push code và publish
 major:
 	git add .
-	git commit -m "chore: release major" || true
+	-git commit -m "chore: release major"
 	npm version major
 	git push
 	git push --tags
