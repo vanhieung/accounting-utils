@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, session, ipcMain, dialog, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
@@ -9,6 +9,28 @@ const { autoUpdater } = require('electron-updater');
 let downloadDestination = path.join(app.getPath('downloads'), 'InvoicesAuto');
 if (!fs.existsSync(downloadDestination)) {
   fs.mkdirSync(downloadDestination, { recursive: true });
+}
+
+const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
+
+function loadAccounts() {
+  try {
+    if (fs.existsSync(ACCOUNTS_FILE)) {
+      const data = fs.readFileSync(ACCOUNTS_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error('Lỗi đọc accounts.json:', e);
+  }
+  return [];
+}
+
+function saveAccountsData(accounts) {
+  try {
+    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+  } catch (e) {
+    console.error('Lỗi lưu accounts.json:', e);
+  }
 }
 
 let batchDownloadWindow;
@@ -408,4 +430,148 @@ ipcMain.handle('install-update', () => {
 
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
+});
+
+// === Account Management IPC Handlers ===
+ipcMain.handle('get-accounts', () => {
+  const accounts = loadAccounts();
+  return accounts.map(acc => {
+    let password = '';
+    try {
+      if (acc.encryptedPassword && safeStorage.isEncryptionAvailable()) {
+        const buffer = Buffer.from(acc.encryptedPassword, 'base64');
+        password = safeStorage.decryptString(buffer);
+      }
+    } catch (e) {
+      console.error('Lỗi giải mã mật khẩu:', e);
+    }
+    return { id: acc.id, mst: acc.mst, name: acc.name, password: password };
+  });
+});
+
+ipcMain.handle('save-account', (event, account) => {
+  const accounts = loadAccounts();
+  let encryptedPassword = '';
+  try {
+    if (account.password && safeStorage.isEncryptionAvailable()) {
+      const buffer = safeStorage.encryptString(account.password);
+      encryptedPassword = buffer.toString('base64');
+    }
+  } catch (e) {
+    console.error('Lỗi mã hóa mật khẩu:', e);
+  }
+
+  const existingIndex = accounts.findIndex(a => a.id === account.id);
+  const accData = {
+    id: account.id || Date.now().toString(),
+    mst: account.mst,
+    name: account.name,
+    encryptedPassword: encryptedPassword
+  };
+
+  if (existingIndex >= 0) {
+    accounts[existingIndex] = accData;
+  } else {
+    accounts.push(accData);
+  }
+  
+  saveAccountsData(accounts);
+  return { success: true, id: accData.id };
+});
+
+ipcMain.handle('delete-account', (event, id) => {
+  let accounts = loadAccounts();
+  accounts = accounts.filter(a => a.id !== id);
+  saveAccountsData(accounts);
+  return { success: true };
+});
+
+ipcMain.handle('import-excel-accounts', async () => {
+  try {
+    const result = await dialog.showOpenDialog(batchDownloadWindow, {
+      title: 'Chọn file Excel chứa tài khoản',
+      filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls', 'csv'] }],
+      properties: ['openFile']
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, reason: 'canceled' };
+    }
+
+    const filePath = result.filePaths[0];
+    const xlsx = require('xlsx');
+    const workbook = xlsx.readFile(filePath);
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    // Chuyển sheet thành mảng 2 chiều (array of arrays)
+    const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+    const accounts = loadAccounts();
+    let importedCount = 0;
+    const mstRegex = /^\d{10}(-\d{3})?$/;
+
+    for (const row of data) {
+      if (!Array.isArray(row)) continue;
+      
+      let mstIndex = -1;
+      let cleanMst = '';
+      for (let i = 0; i < row.length; i++) {
+        if (!row[i]) continue;
+        let cellVal = String(row[i]).trim();
+        // Xóa hậu tố -QL nếu có
+        let potentialMst = cellVal.replace(/-QL$/i, '').trim();
+        
+        if (mstRegex.test(potentialMst)) {
+          mstIndex = i;
+          cleanMst = potentialMst;
+          break;
+        }
+      }
+
+      if (mstIndex !== -1) {
+        const mst = cleanMst;
+        
+        // Mật khẩu là cột có dữ liệu cuối cùng trong dòng
+        let password = '';
+        for (let i = row.length - 1; i > mstIndex; i--) {
+          if (row[i] && String(row[i]).trim() !== '') {
+            password = String(row[i]).trim();
+            break;
+          }
+        }
+        
+        const name = mstIndex > 0 ? String(row[mstIndex - 1] || '').trim() : '';
+
+        if (password) {
+          let encryptedPassword = '';
+          if (safeStorage.isEncryptionAvailable()) {
+            const buffer = safeStorage.encryptString(password);
+            encryptedPassword = buffer.toString('base64');
+          }
+
+          const existingIndex = accounts.findIndex(a => a.mst === mst);
+          const accData = {
+            id: existingIndex >= 0 ? accounts[existingIndex].id : Date.now().toString() + Math.random(),
+            mst,
+            name,
+            encryptedPassword
+          };
+
+          if (existingIndex >= 0) {
+            accounts[existingIndex] = accData;
+          } else {
+            accounts.push(accData);
+          }
+          importedCount++;
+        }
+      }
+    }
+
+    saveAccountsData(accounts);
+    return { success: true, count: importedCount };
+
+  } catch (error) {
+    console.error('Lỗi import Excel:', error);
+    return { success: false, reason: error.message };
+  }
 });

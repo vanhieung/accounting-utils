@@ -13,6 +13,10 @@ const api = {
       ipcRenderer.removeListener('download-completed', listener);
     };
   },
+  getAccounts: () => ipcRenderer.invoke('get-accounts'),
+  saveAccount: (account) => ipcRenderer.invoke('save-account', account),
+  deleteAccount: (id) => ipcRenderer.invoke('delete-account', id),
+  importExcelAccounts: () => ipcRenderer.invoke('import-excel-accounts'),
   // Auto-update APIs
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
@@ -146,6 +150,42 @@ function initApp() {
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 200px;
+          }
+          .account-section {
+            margin-bottom: 12px;
+            font-size: 12px;
+            background: #eef2fe;
+            padding: 8px 10px;
+            border-radius: 6px;
+            display: flex;
+            gap: 5px;
+            align-items: center;
+          }
+          .account-select {
+            flex: 1;
+            font-size: 11px;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+            padding: 4px;
+            max-width: 140px;
+          }
+          .modal {
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            background: rgba(0,0,0,0.5); z-index: 10;
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+          }
+          .modal-content {
+            background: white; padding: 15px; border-radius: 8px; width: 85%;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 8px;
+          }
+          .modal-content input {
+            padding: 6px; font-size: 12px; border: 1px solid #dcdfe6; border-radius: 4px;
+          }
+          .acc-list {
+            list-style: none; padding: 0; margin: 0; max-height: 100px; overflow-y: auto; font-size: 11px;
+          }
+          .acc-item {
+            display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #eee; align-items: center;
           }
           .btn-small {
             font-size: 11px;
@@ -508,7 +548,14 @@ function initApp() {
             </div>
           </div>
           <div class="body">
-            <div class="folder-title">Thư mục lưu hóa đơn</div>
+            <div class="folder-title">Tài khoản & Thư mục</div>
+            <div class="account-section">
+              <select id="account-select" class="account-select">
+                <option value="">-- Chọn tài khoản --</option>
+              </select>
+              <button class="btn-small" id="btn-fill-account" title="Điền vào form">Điền form</button>
+              <button class="btn-small" id="btn-manage-accounts" title="Quản lý">⚙️</button>
+            </div>
             <div class="folder-section">
               <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
               <button class="btn-small" id="btn-change-folder">Đổi</button>
@@ -549,6 +596,23 @@ function initApp() {
           </div>
         </div>
         <div class="widget-btn" id="widget-btn" title="Mở công cụ tải hóa đơn"></div>
+        <div id="account-modal" class="modal">
+          <div class="modal-content">
+            <div style="font-weight: bold; margin-bottom: 5px;">Quản lý tài khoản</div>
+            <input type="text" id="acc-mst" placeholder="Mã số thuế" />
+            <input type="password" id="acc-pwd" placeholder="Mật khẩu" />
+            <input type="text" id="acc-name" placeholder="Tên công ty (tùy chọn)" />
+            <div style="display: flex; gap: 5px;">
+              <button class="btn-small" id="btn-save-acc" style="flex: 1; background: #28c76f;">Lưu / Thêm</button>
+              <button class="btn-small" id="btn-close-acc" style="flex: 1; background: #6c757d;">Đóng</button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+              <div style="font-weight: bold; font-size: 11px;">Danh sách đã lưu:</div>
+              <button class="btn-small" id="btn-import-excel" style="background: #0052cc;">Nhập từ Excel</button>
+            </div>
+            <ul id="acc-list" class="acc-list"></ul>
+          </div>
+        </div>
       `;
 
       this.folderEl = this.shadow.getElementById('folder-path');
@@ -616,6 +680,150 @@ function initApp() {
 
       this.shadow.getElementById('update-dismiss').addEventListener('click', () => {
         this.updateBanner.classList.remove('visible');
+      });
+
+      // Account Management Logic
+      this.accountSelect = this.shadow.getElementById('account-select');
+      this.btnFillAccount = this.shadow.getElementById('btn-fill-account');
+      this.btnManageAccounts = this.shadow.getElementById('btn-manage-accounts');
+      this.accountModal = this.shadow.getElementById('account-modal');
+      this.btnCloseAcc = this.shadow.getElementById('btn-close-acc');
+      this.btnSaveAcc = this.shadow.getElementById('btn-save-acc');
+      this.btnImportExcel = this.shadow.getElementById('btn-import-excel');
+      this.accList = this.shadow.getElementById('acc-list');
+      
+      this.accounts = [];
+
+      this.btnManageAccounts.addEventListener('click', () => {
+        this.accountModal.style.display = 'flex';
+        this.renderAccountList();
+      });
+
+      this.btnCloseAcc.addEventListener('click', () => {
+        this.accountModal.style.display = 'none';
+      });
+
+      this.btnImportExcel.addEventListener('click', async () => {
+        this.btnImportExcel.textContent = '...';
+        this.btnImportExcel.disabled = true;
+        try {
+          const res = await window.electronAPI.importExcelAccounts();
+          if (res.success) {
+            this.showToast(`Nhập thành công ${res.count} tài khoản!`);
+            this.loadAccounts();
+          } else if (res.reason !== 'canceled') {
+            this.showToast(`Lỗi: ${res.reason}`);
+          }
+        } catch (e) {
+          this.showToast(`Lỗi: ${e.message}`);
+        } finally {
+          this.btnImportExcel.textContent = 'Nhập từ Excel';
+          this.btnImportExcel.disabled = false;
+        }
+      });
+
+      this.btnSaveAcc.addEventListener('click', async () => {
+        const mst = this.shadow.getElementById('acc-mst').value.trim();
+        const pwd = this.shadow.getElementById('acc-pwd').value;
+        const name = this.shadow.getElementById('acc-name').value.trim();
+        
+        if (!mst || !pwd) {
+          this.showToast('Vui lòng nhập MST và Mật khẩu');
+          return;
+        }
+        
+        await window.electronAPI.saveAccount({ mst, password: pwd, name });
+        this.shadow.getElementById('acc-mst').value = '';
+        this.shadow.getElementById('acc-pwd').value = '';
+        this.shadow.getElementById('acc-name').value = '';
+        this.showToast('Lưu tài khoản thành công!');
+        this.loadAccounts();
+      });
+
+      this.btnFillAccount.addEventListener('click', () => {
+        const selectedId = this.accountSelect.value;
+        if (!selectedId) {
+          this.showToast('Vui lòng chọn tài khoản');
+          return;
+        }
+        const acc = this.accounts.find(a => a.id === selectedId);
+        if (acc) {
+          // Find inputs on the page
+          const inputs = document.querySelectorAll('input');
+          let mstFilled = false;
+          let pwdFilled = false;
+          
+          for (const input of inputs) {
+            // Tìm ô input MST/Tên đăng nhập
+            const name = (input.name || '').toLowerCase();
+            const id = (input.id || '').toLowerCase();
+            const placeholder = (input.placeholder || '').toLowerCase();
+            
+            const isUsername = name.includes('username') || name.includes('tendangnhap') || name === 'mst' || 
+                               id.includes('username') || id.includes('tendangnhap') || id === 'mst' ||
+                               placeholder.includes('tên đăng nhập') || placeholder.includes('mã số thuế') ||
+                               placeholder.includes('tendangnhap');
+
+            if (isUsername && !mstFilled && input.type !== 'hidden') {
+              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+              nativeInputValueSetter.call(input, acc.mst);
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              mstFilled = true;
+            } else if (input.type === 'password' && !pwdFilled) {
+              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+              nativeInputValueSetter.call(input, acc.password);
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              pwdFilled = true;
+            }
+          }
+          if (mstFilled || pwdFilled) {
+            this.showToast('Đã điền thông tin đăng nhập');
+          } else {
+            this.showToast('Không tìm thấy ô đăng nhập trên trang này');
+          }
+        }
+      });
+
+      this.loadAccounts();
+    }
+
+    async loadAccounts() {
+      this.accounts = await window.electronAPI.getAccounts();
+      this.accountSelect.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
+      this.accounts.forEach(acc => {
+        const opt = document.createElement('option');
+        opt.value = acc.id;
+        opt.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
+        this.accountSelect.appendChild(opt);
+      });
+      if(this.accountModal.style.display === 'flex') {
+        this.renderAccountList();
+      }
+    }
+
+    renderAccountList() {
+      this.accList.innerHTML = '';
+      this.accounts.forEach(acc => {
+        const li = document.createElement('li');
+        li.className = 'acc-item';
+        
+        const info = document.createElement('span');
+        info.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
+        
+        const btnDel = document.createElement('button');
+        btnDel.textContent = 'Xóa';
+        btnDel.className = 'btn-small';
+        btnDel.style.background = '#ea5455';
+        btnDel.onclick = async () => {
+          if (confirm(`Xóa tài khoản MST ${acc.mst}?`)) {
+            await window.electronAPI.deleteAccount(acc.id);
+            this.loadAccounts();
+          }
+        };
+        
+        li.appendChild(info);
+        li.appendChild(btnDel);
+        this.accList.appendChild(li);
       });
     }
 

@@ -38,7 +38,8 @@
   "author": "AccountingApp",
   "dependencies": {
     "electron-updater": "^6.3.9",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "dotenv-cli": "^11.0.0",
