@@ -303,7 +303,7 @@ app.whenReady().then(() => {
             isManualUpdateCheck = true;
             autoUpdater.checkForUpdates().catch(err => {
               isManualUpdateCheck = false;
-              dialog.showErrorBox('Lỗi', 'Không thể kiểm tra cập nhật: ' + err.message);
+              // Error is handled by autoUpdater.on('error') event, so no native dialog needed
             });
           }
         },
