@@ -17,6 +17,10 @@ const api = {
   saveAccount: (account) => ipcRenderer.invoke('save-account', account),
   deleteAccount: (id) => ipcRenderer.invoke('delete-account', id),
   importExcelAccounts: () => ipcRenderer.invoke('import-excel-accounts'),
+  setActiveMst: (mst) => ipcRenderer.invoke('set-active-mst', mst),
+  setFolderOrganization: (enabled) => ipcRenderer.invoke('set-folder-organization', enabled),
+  getFolderOrganization: () => ipcRenderer.invoke('get-folder-organization'),
+  exportAccountsExcel: () => ipcRenderer.invoke('export-accounts-excel'),
   // Auto-update APIs
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
@@ -518,6 +522,28 @@ function initApp() {
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
           }
+          .organize-section {
+            margin-bottom: 12px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            background: #f0f7ff;
+            border-radius: 6px;
+            border: 1px dashed #b0c4de;
+          }
+          .organize-section input[type="checkbox"] {
+            accent-color: #0052cc;
+            cursor: pointer;
+            width: 14px;
+            height: 14px;
+          }
+          .organize-section label {
+            cursor: pointer;
+            color: #2c3e50;
+            font-weight: 500;
+          }
         </style>
         <div class="panel" id="main-panel">
           <div class="header">
@@ -560,6 +586,10 @@ function initApp() {
               <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
               <button class="btn-small" id="btn-change-folder">Đổi</button>
             </div>
+            <div class="organize-section">
+              <input type="checkbox" id="chk-organize-mst" />
+              <label for="chk-organize-mst">📁 Tạo thư mục riêng theo MST</label>
+            </div>
             
             <div class="stats-grid">
               <div class="stat-card" style="grid-column: span 2;">
@@ -585,9 +615,9 @@ function initApp() {
             </div>
 
             <div class="actions">
-              <button class="btn-action btn-start" id="btn-start">Tải toàn bộ</button>
-              <button class="btn-action btn-skip" id="btn-skip" disabled>Bỏ qua dòng</button>
-              <button class="btn-action btn-stop" id="btn-stop" disabled>Dừng</button>
+              <button class="btn-action btn-start" id="btn-start" title="Phím tắt: Ctrl+Shift+S">Tải toàn bộ</button>
+              <button class="btn-action btn-skip" id="btn-skip" disabled title="Phím tắt: Ctrl+Shift+N">Bỏ qua dòng</button>
+              <button class="btn-action btn-stop" id="btn-stop" disabled title="Phím tắt: Ctrl+Shift+X">Dừng</button>
             </div>
 
             <div class="log-panel" id="log-container">
@@ -609,6 +639,7 @@ function initApp() {
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
               <div style="font-weight: bold; font-size: 11px;">Danh sách đã lưu:</div>
               <button class="btn-small" id="btn-import-excel" style="background: #0052cc;">Nhập từ Excel</button>
+              <button class="btn-small" id="btn-export-excel" style="background: #28c76f;">Xuất ra Excel</button>
             </div>
             <ul id="acc-list" class="acc-list"></ul>
           </div>
@@ -722,6 +753,29 @@ function initApp() {
         }
       });
 
+      // Export accounts to Excel
+      this.btnExportExcel = this.shadow.getElementById('btn-export-excel');
+      this.btnExportExcel.addEventListener('click', async () => {
+        this.btnExportExcel.textContent = '...';
+        this.btnExportExcel.disabled = true;
+        try {
+          const res = await window.electronAPI.exportAccountsExcel();
+          if (res.success) {
+            this.showToast('Xuất tài khoản thành công!', {
+              actionLabel: '📂 Mở thư mục',
+              onAction: () => window.electronAPI.openFolder(res.dirPath),
+            });
+          } else if (res.reason !== 'canceled') {
+            this.showToast(`Lỗi: ${res.reason}`);
+          }
+        } catch (e) {
+          this.showToast(`Lỗi: ${e.message}`);
+        } finally {
+          this.btnExportExcel.textContent = 'Xuất ra Excel';
+          this.btnExportExcel.disabled = false;
+        }
+      });
+
       this.btnSaveAcc.addEventListener('click', async () => {
         const mst = this.shadow.getElementById('acc-mst').value.trim();
         const pwd = this.shadow.getElementById('acc-pwd').value;
@@ -785,6 +839,48 @@ function initApp() {
       });
 
       this.loadAccounts();
+
+      // Folder organization checkbox (persisted)
+      this.chkOrganizeMst = this.shadow.getElementById('chk-organize-mst');
+      window.electronAPI.getFolderOrganization().then(val => {
+        this.chkOrganizeMst.checked = val;
+      });
+      this.chkOrganizeMst.addEventListener('change', () => {
+        window.electronAPI.setFolderOrganization(this.chkOrganizeMst.checked);
+        this.log(this.chkOrganizeMst.checked ? '📁 Bật tạo thư mục theo MST' : '📁 Tắt tạo thư mục theo MST');
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey) {
+          switch (e.code) {
+            case 'KeyS':
+              e.preventDefault();
+              if (!this.btnStart.disabled) this.onStart();
+              break;
+            case 'KeyX':
+              e.preventDefault();
+              if (!this.btnStop.disabled) this.onStop();
+              break;
+            case 'KeyN':
+              e.preventDefault();
+              if (!this.btnSkip.disabled) this.onSkip();
+              break;
+            case 'KeyM':
+              e.preventDefault();
+              const panel = this.shadow.getElementById('main-panel');
+              const widget = this.shadow.getElementById('widget-btn');
+              if (panel.classList.contains('minimized')) {
+                panel.classList.remove('minimized');
+                widget.classList.remove('minimized');
+              } else {
+                panel.classList.add('minimized');
+                widget.classList.add('minimized');
+              }
+              break;
+          }
+        }
+      });
     }
 
     async loadAccounts() {
@@ -1085,6 +1181,13 @@ function initApp() {
       this.successCount = 0;
       this.failureCount = 0;
 
+      // Set active MST for per-account folder organization
+      if (this.ui && this.ui.accountSelect) {
+        const selectedId = this.ui.accountSelect.value;
+        const selectedAcc = this.ui.accounts.find(a => a.id === selectedId);
+        await window.electronAPI.setActiveMst(selectedAcc ? selectedAcc.mst : null);
+      }
+
       try {
         this.setState('WAITING_FOR_TABLE');
         const table = document.querySelector(this.selectors.resultTable);
@@ -1187,9 +1290,39 @@ function initApp() {
         this.skipController = new AbortController();
 
         try {
-          await this.downloadRow(currentRow, i, signal, this.skipController.signal);
-          this.successCount++;
-          this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
+          let lastError = null;
+          let downloaded = false;
+          const MAX_RETRIES = 3;
+
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            try {
+              await this.downloadRow(currentRow, i, signal, this.skipController.signal);
+              downloaded = true;
+              break;
+            } catch (retryErr) {
+              // Never retry user-initiated aborts or skips
+              if (retryErr.name === 'AbortError') throw retryErr;
+              lastError = retryErr;
+              if (attempt < MAX_RETRIES) {
+                const backoffMs = Math.pow(2, attempt) * 1000; // 2s, 4s
+                this.ui.log(`⟳ Dòng ${i + 1}: Lỗi "${retryErr.message}". Thử lại lần ${attempt} sau ${backoffMs / 1000}s...`);
+                await this.wait(backoffMs);
+                // Re-click the row since DOM state may have changed
+                const refreshedRows = Array.from(document.querySelectorAll(this.selectors.invoiceRows));
+                if (refreshedRows[i]) {
+                  refreshedRows[i].click();
+                  await this.wait(this.behavior.selectionDelayMs);
+                }
+              }
+            }
+          }
+
+          if (downloaded) {
+            this.successCount++;
+            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
+          } else {
+            throw lastError;
+          }
         } catch (e) {
           if (e.name === 'AbortError' && e.message !== 'Người dùng bấm Bỏ qua') {
             throw e;
@@ -1200,7 +1333,7 @@ function initApp() {
           } else if (e.message.includes('không có file') || e.message.includes('Không có file') || e.message.includes('server không trả file')) {
             this.ui.log(`⏭ Dòng ${i + 1}: Bỏ qua — server không trả file.`);
           } else {
-            this.ui.log(`✗ Dòng ${i + 1}: ${e.message}`);
+            this.ui.log(`✗ Dòng ${i + 1}: ${e.message} (đã thử 3 lần)`);
           }
         } finally {
           this.skipController = null;

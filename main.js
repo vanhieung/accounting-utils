@@ -11,6 +11,36 @@ if (!fs.existsSync(downloadDestination)) {
   fs.mkdirSync(downloadDestination, { recursive: true });
 }
 
+let activeMst = null;
+let organizeFoldersByMst = false;
+
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Lỗi đọc settings.json:', e);
+  }
+  return {};
+}
+
+function saveSetting(key, value) {
+  try {
+    const settings = loadSettings();
+    settings[key] = value;
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    console.error('Lỗi lưu settings.json:', e);
+  }
+}
+
+// Load initial settings
+const _initSettings = loadSettings();
+organizeFoldersByMst = !!_initSettings.organizeFoldersByMst;
+
 const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
 
 function loadAccounts() {
@@ -123,14 +153,21 @@ function openBatchDownloadWindow() {
         fileName = `${base}_${opId}${ext}`;
       }
 
-      let savePath = path.join(downloadDestination, fileName);
+      let actualDestination = downloadDestination;
+      if (organizeFoldersByMst && activeMst) {
+        actualDestination = path.join(downloadDestination, activeMst);
+        if (!fs.existsSync(actualDestination)) {
+          fs.mkdirSync(actualDestination, { recursive: true });
+        }
+      }
+      let savePath = path.join(actualDestination, fileName);
 
       // Đảm bảo tuyệt đối không đè file nếu file đã tồn tại
       let counter = 1;
       while (fs.existsSync(savePath)) {
         const ext = path.extname(fileName);
         const base = path.basename(fileName, ext);
-        savePath = path.join(downloadDestination, `${base} (${counter})${ext}`);
+        savePath = path.join(actualDestination, `${base} (${counter})${ext}`);
         counter++;
       }
 
@@ -572,6 +609,69 @@ ipcMain.handle('import-excel-accounts', async () => {
 
   } catch (error) {
     console.error('Lỗi import Excel:', error);
+    return { success: false, reason: error.message };
+  }
+});
+
+// === Per-Account Folder Organization IPC ===
+ipcMain.handle('set-active-mst', (event, mst) => {
+  activeMst = mst || null;
+  return { success: true };
+});
+
+ipcMain.handle('set-folder-organization', (event, enabled) => {
+  organizeFoldersByMst = !!enabled;
+  saveSetting('organizeFoldersByMst', organizeFoldersByMst);
+  return { success: true };
+});
+
+ipcMain.handle('get-folder-organization', () => {
+  return organizeFoldersByMst;
+});
+
+// === Export Accounts to Excel ===
+ipcMain.handle('export-accounts-excel', async () => {
+  try {
+    const accounts = loadAccounts();
+    if (accounts.length === 0) {
+      return { success: false, reason: 'Không có tài khoản nào để xuất' };
+    }
+
+    const result = await dialog.showSaveDialog(batchDownloadWindow, {
+      title: 'Xuất danh sách tài khoản',
+      defaultPath: path.join(app.getPath('downloads'), 'accounts_export.xlsx'),
+      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+    });
+
+    if (result.canceled) {
+      return { success: false, reason: 'canceled' };
+    }
+
+    const xlsx = require('xlsx');
+    const exportData = accounts.map((acc, index) => {
+      let password = '';
+      try {
+        if (acc.encryptedPassword && safeStorage.isEncryptionAvailable()) {
+          const buffer = Buffer.from(acc.encryptedPassword, 'base64');
+          password = safeStorage.decryptString(buffer);
+        }
+      } catch (e) { /* skip */ }
+      return {
+        'STT': index + 1,
+        'Mã số thuế': acc.mst,
+        'Tên công ty': acc.name || '',
+        'Mật khẩu': password
+      };
+    });
+
+    const ws = xlsx.utils.json_to_sheet(exportData);
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, 'Tài khoản');
+    xlsx.writeFile(wb, result.filePath);
+
+    return { success: true, filePath: result.filePath, dirPath: path.dirname(result.filePath) };
+  } catch (error) {
+    console.error('Lỗi xuất Excel:', error);
     return { success: false, reason: error.message };
   }
 });
