@@ -1,4 +1,4 @@
-const { app, BrowserWindow, session, ipcMain, dialog, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, session, ipcMain, dialog, shell, safeStorage, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
@@ -292,14 +292,40 @@ app.whenReady().then(() => {
 
   openBatchDownloadWindow();
 
+  // === Menu Setup ===
+  const menuTemplate = [
+    {
+      label: 'Công cụ',
+      submenu: [
+        {
+          label: 'Kiểm tra cập nhật',
+          click: () => {
+            isManualUpdateCheck = true;
+            autoUpdater.checkForUpdates().catch(err => {
+              isManualUpdateCheck = false;
+              dialog.showErrorBox('Lỗi', 'Không thể kiểm tra cập nhật: ' + err.message);
+            });
+          }
+        },
+        { type: 'separator' },
+        { role: 'toggleDevTools', label: 'Bật/Tắt DevTools' },
+        { role: 'reload', label: 'Tải lại' },
+        { role: 'quit', label: 'Thoát' }
+      ]
+    }
+  ];
+  const menu = Menu.buildFromTemplate(menuTemplate);
+  Menu.setApplicationMenu(menu);
+
   // === Auto-Updater Setup ===
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  let isManualUpdateCheck = false;
 
   // Forward update events to renderer
   function sendUpdateStatus(channel, data) {
     if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
-      batchDownloadWindow.webContents.send(channel, data);
+      batchDownloadWindow.webContents.send(channel, { ...data, isManual: isManualUpdateCheck });
     }
   }
 
@@ -314,6 +340,7 @@ app.whenReady().then(() => {
       releaseNotes: info.releaseNotes || '',
       releaseDate: info.releaseDate || ''
     });
+    isManualUpdateCheck = false;
   });
 
   autoUpdater.on('update-not-available', (info) => {
@@ -321,6 +348,7 @@ app.whenReady().then(() => {
       status: 'not-available',
       version: info.version
     });
+    isManualUpdateCheck = false;
   });
 
   autoUpdater.on('download-progress', (progress) => {
@@ -345,6 +373,7 @@ app.whenReady().then(() => {
       status: 'error',
       message: err.message || 'Lỗi kiểm tra cập nhật'
     });
+    isManualUpdateCheck = false;
   });
 
   // Check for updates on startup (delay 5s to let app fully load)
@@ -354,12 +383,6 @@ app.whenReady().then(() => {
     });
   }, 5000);
 
-  // Periodically check for updates every 30 minutes
-  setInterval(() => {
-    autoUpdater.checkForUpdates().catch(err => {
-      console.error('Periodic update check failed:', err);
-    });
-  }, 30 * 60 * 1000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

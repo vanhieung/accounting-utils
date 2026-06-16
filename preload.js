@@ -926,7 +926,13 @@ function initApp() {
     handleUpdateStatus(data) {
       switch (data.status) {
         case 'checking':
-          // Silently checking — no UI change
+          if (data.isManual) {
+            this.updateBanner.classList.add('visible');
+            this.updateTitle.innerHTML = '<span class="spinner"></span> Đang kiểm tra...';
+            this.updateMsg.textContent = 'Đang tìm phiên bản mới nhất trên máy chủ.';
+            this.updateActions.style.display = 'none';
+            this.updateProgress.style.display = 'none';
+          }
           break;
 
         case 'available':
@@ -937,13 +943,27 @@ function initApp() {
             : `Phiên bản ${data.version} đã sẵn sàng. Nhấn "Tải cập nhật" để nâng cấp.`;
           this.updateActions.style.display = 'flex';
           this.updateProgress.style.display = 'none';
+          this.updateDownloadBtn.style.display = '';
           this.updateDownloadBtn.disabled = false;
           this.updateDownloadBtn.innerHTML = '⬇ Tải cập nhật';
           this.log(`🔄 Phát hiện bản cập nhật v${data.version}`);
           break;
 
         case 'not-available':
-          // No update — do nothing (silent)
+          if (data.isManual) {
+            this.updateBanner.classList.add('visible');
+            this.updateTitle.textContent = 'Đã là bản mới nhất';
+            this.updateMsg.textContent = `Phiên bản hiện tại (v${data.version || this.versionBadge.textContent.replace('v','')}) đã là mới nhất.`;
+            this.updateActions.style.display = 'flex';
+            this.updateDownloadBtn.style.display = 'none';
+            this.updateLaterBtn.textContent = 'Đóng';
+            this.updateProgress.style.display = 'none';
+            setTimeout(() => {
+              this.updateBanner.classList.remove('visible');
+              this.updateDownloadBtn.style.display = '';
+              this.updateLaterBtn.textContent = 'Để sau';
+            }, 5000);
+          }
           break;
 
         case 'downloading':
@@ -966,6 +986,7 @@ function initApp() {
           this.updateMsg.textContent = `Phiên bản v${data.version} đã sẵn sàng cài đặt. Ứng dụng sẽ khởi động lại.`;
           this.updateProgress.style.display = 'none';
           this.updateActions.style.display = 'flex';
+          this.updateDownloadBtn.style.display = '';
           this.updateDownloadBtn.disabled = false;
           this.updateDownloadBtn.innerHTML = '🚀 Cài đặt và khởi động lại';
           this.updateDownloadBtn.onclick = () => {
@@ -976,19 +997,20 @@ function initApp() {
           break;
 
         case 'error':
-          // Show error briefly then hide
-          this.updateBanner.classList.add('visible');
-          this.updateTitle.textContent = '⚠ Lỗi cập nhật';
-          this.updateMsg.textContent = data.message || 'Không thể kiểm tra cập nhật.';
-          this.updateActions.style.display = 'flex';
-          this.updateDownloadBtn.style.display = 'none';
-          this.updateLaterBtn.textContent = 'Đóng';
-          this.updateProgress.style.display = 'none';
-          setTimeout(() => {
-            this.updateBanner.classList.remove('visible');
-            this.updateDownloadBtn.style.display = '';
-            this.updateLaterBtn.textContent = 'Để sau';
-          }, 8000);
+          if (data.isManual || this.updateBanner.classList.contains('visible')) {
+            this.updateBanner.classList.add('visible');
+            this.updateTitle.textContent = '⚠ Lỗi cập nhật';
+            this.updateMsg.textContent = data.message || 'Không thể kiểm tra cập nhật.';
+            this.updateActions.style.display = 'flex';
+            this.updateDownloadBtn.style.display = 'none';
+            this.updateLaterBtn.textContent = 'Đóng';
+            this.updateProgress.style.display = 'none';
+            setTimeout(() => {
+              this.updateBanner.classList.remove('visible');
+              this.updateDownloadBtn.style.display = '';
+              this.updateLaterBtn.textContent = 'Để sau';
+            }, 8000);
+          }
           break;
       }
     }

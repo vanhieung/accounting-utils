@@ -20,7 +20,8 @@
         "provider": "github",
         "owner": "vanhieung",
         "repo": "accounting-utils",
-        "releaseType": "release"
+        "releaseType": "release",
+        "private": false
       }
     ],
     "win": {
