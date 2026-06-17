@@ -9,8 +9,12 @@
   },
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win",
-    "publish": "dotenv -- electron-builder --win --publish always"
+    "dist": "electron-builder --win --mac",
+    "publish": "dotenv -- electron-builder --win --mac --publish always",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "publish:win": "dotenv -- electron-builder --win --publish always",
+    "publish:mac": "dotenv -- electron-builder --mac --publish always"
   },
   "build": {
     "appId": "com.accounting.invoice-downloader",
@@ -28,12 +32,22 @@
       "target": "nsis",
       "icon": "app_icon.ico"
     },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "app_icon.png"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Tải Hóa Đơn Tự Động"
+    },
+    "dmg": {
+      "title": "Tải Hóa Đơn Tự Động"
     }
   },
   "author": "AccountingApp",
