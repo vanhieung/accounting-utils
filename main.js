@@ -16,24 +16,33 @@ let organizeFoldersByMst = false;
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
+let cachedSettings = null;
+
 function loadSettings() {
+  if (cachedSettings !== null) return cachedSettings;
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
-      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+      cachedSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    } else {
+      cachedSettings = {};
     }
   } catch (e) {
     console.error('Lỗi đọc settings.json:', e);
+    cachedSettings = {};
   }
-  return {};
+  return cachedSettings;
 }
 
 function saveSetting(key, value) {
   try {
     const settings = loadSettings();
     settings[key] = value;
-    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+    cachedSettings = settings;
+    fsPromises.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2)).catch(e => {
+      console.error('Lỗi lưu settings.json:', e);
+    });
   } catch (e) {
-    console.error('Lỗi lưu settings.json:', e);
+    console.error('Lỗi cập nhật settings:', e);
   }
 }
 
@@ -43,21 +52,29 @@ organizeFoldersByMst = !!_initSettings.organizeFoldersByMst;
 
 const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
 
-function loadAccounts() {
+let cachedAccounts = null;
+
+async function loadAccounts() {
+  if (cachedAccounts !== null) return cachedAccounts;
   try {
-    if (fs.existsSync(ACCOUNTS_FILE)) {
-      const data = fs.readFileSync(ACCOUNTS_FILE, 'utf8');
-      return JSON.parse(data);
+    const exists = await fsPromises.access(ACCOUNTS_FILE).then(() => true).catch(() => false);
+    if (exists) {
+      const data = await fsPromises.readFile(ACCOUNTS_FILE, 'utf8');
+      cachedAccounts = JSON.parse(data);
+    } else {
+      cachedAccounts = [];
     }
   } catch (e) {
     console.error('Lỗi đọc accounts.json:', e);
+    cachedAccounts = [];
   }
-  return [];
+  return cachedAccounts;
 }
 
-function saveAccountsData(accounts) {
+async function saveAccountsData(accounts) {
+  cachedAccounts = accounts;
   try {
-    fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+    await fsPromises.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
   } catch (e) {
     console.error('Lỗi lưu accounts.json:', e);
   }
@@ -179,9 +196,8 @@ function openBatchDownloadWindow() {
         } else if (state === 'progressing') {
           if (item.isPaused()) {
             console.log('Download is paused');
-          } else {
-            console.log(`Received bytes: ${item.getReceivedBytes()}`);
           }
+          // Removed spammy console.log(`Received bytes: ...`)
         }
       });
 
@@ -493,8 +509,8 @@ ipcMain.handle('get-app-version', () => {
 });
 
 // === Account Management IPC Handlers ===
-ipcMain.handle('get-accounts', () => {
-  const accounts = loadAccounts();
+ipcMain.handle('get-accounts', async () => {
+  const accounts = await loadAccounts();
   return accounts.map(acc => {
     let password = '';
     try {
@@ -509,8 +525,8 @@ ipcMain.handle('get-accounts', () => {
   });
 });
 
-ipcMain.handle('save-account', (event, account) => {
-  const accounts = loadAccounts();
+ipcMain.handle('save-account', async (event, account) => {
+  const accounts = await loadAccounts();
   let encryptedPassword = '';
   try {
     if (account.password && safeStorage.isEncryptionAvailable()) {
@@ -535,14 +551,14 @@ ipcMain.handle('save-account', (event, account) => {
     accounts.push(accData);
   }
   
-  saveAccountsData(accounts);
+  await saveAccountsData(accounts);
   return { success: true, id: accData.id };
 });
 
-ipcMain.handle('delete-account', (event, id) => {
-  let accounts = loadAccounts();
+ipcMain.handle('delete-account', async (event, id) => {
+  let accounts = await loadAccounts();
   accounts = accounts.filter(a => a.id !== id);
-  saveAccountsData(accounts);
+  await saveAccountsData(accounts);
   return { success: true };
 });
 
@@ -566,7 +582,7 @@ ipcMain.handle('import-excel-accounts', async () => {
     // Chuyển sheet thành mảng 2 chiều (array of arrays)
     const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
-    const accounts = loadAccounts();
+    const accounts = await loadAccounts();
     let importedCount = 0;
     const mstRegex = /^\d{10}(-\d{3})?$/;
 
@@ -627,7 +643,7 @@ ipcMain.handle('import-excel-accounts', async () => {
       }
     }
 
-    saveAccountsData(accounts);
+    await saveAccountsData(accounts);
     return { success: true, count: importedCount };
 
   } catch (error) {
@@ -655,7 +671,7 @@ ipcMain.handle('get-folder-organization', () => {
 // === Export Accounts to Excel ===
 ipcMain.handle('export-accounts-excel', async () => {
   try {
-    const accounts = loadAccounts();
+    const accounts = await loadAccounts();
     if (accounts.length === 0) {
       return { success: false, reason: 'Không có tài khoản nào để xuất' };
     }

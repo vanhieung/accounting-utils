@@ -887,12 +887,14 @@ function initApp() {
     async loadAccounts() {
       this.accounts = await window.electronAPI.getAccounts();
       this.accountSelect.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
+      const frag = document.createDocumentFragment();
       this.accounts.forEach(acc => {
         const opt = document.createElement('option');
         opt.value = acc.id;
         opt.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
-        this.accountSelect.appendChild(opt);
+        frag.appendChild(opt);
       });
+      this.accountSelect.appendChild(frag);
       if(this.accountModal.style.display === 'flex') {
         this.renderAccountList();
       }
@@ -900,6 +902,7 @@ function initApp() {
 
     renderAccountList() {
       this.accList.innerHTML = '';
+      const frag = document.createDocumentFragment();
       this.accounts.forEach(acc => {
         const li = document.createElement('li');
         li.className = 'acc-item';
@@ -920,8 +923,9 @@ function initApp() {
         
         li.appendChild(info);
         li.appendChild(btnDel);
-        this.accList.appendChild(li);
+        frag.appendChild(li);
       });
+      this.accList.appendChild(frag);
     }
 
     handleUpdateStatus(data) {
