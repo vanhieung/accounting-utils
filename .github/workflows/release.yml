@@ -1,0 +1,43 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger workflow khi có tag bắt đầu bằng v (ví dụ: v1.1.12)
+
+permissions:
+  contents: write # Cần thiết để GitHub Actions có thể tạo Release và upload file
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Phù hợp với phiên bản Electron/Node.js bạn đang sử dụng
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build & Publish Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tắt tự động tìm chứng chỉ để tránh lỗi build khi không có chứng chỉ Apple Developer
+          CSC_IDENTITY_AUTO_DISCOVERY: false 
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            npx electron-builder --win --publish always
+          else
+            npx electron-builder --mac --publish always
+          fi
+        shell: bash

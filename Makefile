@@ -14,10 +14,13 @@ help:
 	@echo "  make publish      - Build va publish app len GitHub Releases (Mac & Win)"
 	@echo "  make publish-win  - Build va publish app len GitHub Releases (Windows)"
 	@echo "  make publish-mac  - Build va publish app len GitHub Releases (macOS)"
-	@echo "  make release      - Tu dong commit, tang version (patch) va publish"
-	@echo "  make patch        - Tang version patch (1.0.x), push va publish"
-	@echo "  make minor        - Tang version minor (1.x.0), push va publish"
-	@echo "  make major        - Tang version major (x.0.0), push va publish"
+	@echo "  make release      - Tu dong commit, tang version (patch) va publish (Local)"
+	@echo "  make patch        - Tang version patch (1.0.x), push va publish (Local)"
+	@echo "  make minor        - Tang version minor (1.x.0), push va publish (Local)"
+	@echo "  make major        - Tang version major (x.0.0), push va publish (Local)"
+	@echo "  make ci-patch     - Tang version patch va trigger GitHub Actions (Khong build local)"
+	@echo "  make ci-minor     - Tang version minor va trigger GitHub Actions (Khong build local)"
+	@echo "  make ci-major     - Tang version major va trigger GitHub Actions (Khong build local)"
 
 dist:
 	npm run dist
@@ -68,5 +71,27 @@ major:
 	git push --tags
 	npm run publish
 
-# Mặc định release là patch
+# --- Lệnh dành cho GitHub Actions CI/CD (Chỉ push, không build local) ---
+ci-patch:
+	git add .
+	-git commit -m "chore: release patch"
+	npm version patch
+	git push
+	git push --tags
+
+ci-minor:
+	git add .
+	-git commit -m "chore: release minor"
+	npm version minor
+	git push
+	git push --tags
+
+ci-major:
+	git add .
+	-git commit -m "chore: release major"
+	npm version major
+	git push
+	git push --tags
+
+# Mặc định release là patch (local)
 release: patch
