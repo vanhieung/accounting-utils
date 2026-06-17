@@ -681,7 +681,8 @@ function initApp() {
         this.shadow.getElementById('widget-btn').classList.add('minimized');
       });
 
-      this.shadow.getElementById('widget-btn').addEventListener('click', () => {
+      this.shadow.getElementById('widget-btn').addEventListener('click', (e) => {
+        if (this.dragMoved) return;
         this.shadow.getElementById('main-panel').classList.remove('minimized');
         this.shadow.getElementById('widget-btn').classList.remove('minimized');
       });
@@ -1109,19 +1110,41 @@ function initApp() {
 
     makeDraggable() {
       const header = this.shadow.querySelector('.header');
+      const widget = this.shadow.getElementById('widget-btn');
       let isDragging = false;
       let offsetX = 0, offsetY = 0;
+      this.dragMoved = false;
 
-      header.addEventListener('mousedown', (e) => {
+      const onMouseDown = (e) => {
+        if (e.button !== 0) return; // Only left click
         isDragging = true;
+        this.dragMoved = false;
         offsetX = e.clientX - this.container.getBoundingClientRect().left;
         offsetY = e.clientY - this.container.getBoundingClientRect().top;
-      });
+        if (e.target === widget) {
+          e.preventDefault(); // Prevent default image dragging
+        }
+      };
+
+      header.addEventListener('mousedown', onMouseDown);
+      widget.addEventListener('mousedown', onMouseDown);
 
       document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
-        this.container.style.left = `${e.clientX - offsetX}px`;
-        this.container.style.top = `${e.clientY - offsetY}px`;
+        this.dragMoved = true;
+        
+        let newLeft = e.clientX - offsetX;
+        let newTop = e.clientY - offsetY;
+        
+        const rect = this.container.getBoundingClientRect();
+        const maxLeft = window.innerWidth - rect.width;
+        const maxTop = window.innerHeight - rect.height;
+
+        newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+        newTop = Math.max(0, Math.min(newTop, maxTop));
+
+        this.container.style.left = `${newLeft}px`;
+        this.container.style.top = `${newTop}px`;
         this.container.style.right = 'auto';
         this.container.style.bottom = 'auto';
       });
