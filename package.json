@@ -1,6 +1,6 @@
 {
   "name": "invoice-electron-app",
-  "version": "1.1.13",
+  "version": "1.1.14",
   "description": "Auto download invoices",
   "main": "main.js",
   "repository": {
