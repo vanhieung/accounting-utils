@@ -334,7 +334,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(menu);
 
   // === Auto-Updater Setup ===
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   let isManualUpdateCheck = false;
 

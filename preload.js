@@ -945,13 +945,12 @@ function initApp() {
           this.updateTitle.textContent = `Có bản cập nhật v${data.version}!`;
           this.updateMsg.textContent = data.releaseNotes
             ? `${data.releaseNotes}`
-            : `Phiên bản ${data.version} đã sẵn sàng. Nhấn "Tải cập nhật" để nâng cấp.`;
-          this.updateActions.style.display = 'flex';
-          this.updateProgress.style.display = 'none';
-          this.updateDownloadBtn.style.display = '';
-          this.updateDownloadBtn.disabled = false;
-          this.updateDownloadBtn.innerHTML = '⬇ Tải cập nhật';
-          this.log(`🔄 Phát hiện bản cập nhật v${data.version}`);
+            : `Phiên bản ${data.version} đã sẵn sàng. Hệ thống đang tự động tải về...`;
+          this.updateActions.style.display = 'none';
+          this.updateProgress.style.display = 'block';
+          this.updateProgressBar.style.width = '0%';
+          this.updateProgressText.textContent = 'Đang chuẩn bị tải...';
+          this.log(`🔄 Phát hiện bản cập nhật v${data.version}, hệ thống đang tải ngầm...`);
           break;
 
         case 'not-available':
