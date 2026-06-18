@@ -1,6 +1,6 @@
 {
   "name": "invoice-electron-app",
-  "version": "1.1.14",
+  "version": "1.1.13",
   "description": "Auto download invoices",
   "main": "main.js",
   "repository": {
@@ -14,7 +14,8 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "publish:win": "dotenv -- electron-builder --win --publish always",
-    "publish:mac": "dotenv -- electron-builder --mac --publish always"
+    "publish:mac": "dotenv -- electron-builder --mac --publish always",
+    "release": "npm version patch && git push origin main --follow-tags"
   },
   "build": {
     "appId": "com.accounting.invoice-downloader",
