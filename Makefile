@@ -95,3 +95,9 @@ ci-major:
 
 # Mặc định release là patch (local)
 release: patch
+
+# Lệnh một chạm update cho production
+update:
+	git add .
+	-git commit -m "chore: update production"
+	npm run release

@@ -723,7 +723,7 @@ function initApp() {
       this.btnSaveAcc = this.shadow.getElementById('btn-save-acc');
       this.btnImportExcel = this.shadow.getElementById('btn-import-excel');
       this.accList = this.shadow.getElementById('acc-list');
-      
+
       this.accounts = [];
 
       this.btnManageAccounts.addEventListener('click', () => {
@@ -781,12 +781,12 @@ function initApp() {
         const mst = this.shadow.getElementById('acc-mst').value.trim();
         const pwd = this.shadow.getElementById('acc-pwd').value;
         const name = this.shadow.getElementById('acc-name').value.trim();
-        
+
         if (!mst || !pwd) {
           this.showToast('Vui lòng nhập MST và Mật khẩu');
           return;
         }
-        
+
         await window.electronAPI.saveAccount({ mst, password: pwd, name });
         this.shadow.getElementById('acc-mst').value = '';
         this.shadow.getElementById('acc-pwd').value = '';
@@ -807,17 +807,17 @@ function initApp() {
           const inputs = document.querySelectorAll('input');
           let mstFilled = false;
           let pwdFilled = false;
-          
+
           for (const input of inputs) {
             // Tìm ô input MST/Tên đăng nhập
             const name = (input.name || '').toLowerCase();
             const id = (input.id || '').toLowerCase();
             const placeholder = (input.placeholder || '').toLowerCase();
-            
-            const isUsername = name.includes('username') || name.includes('tendangnhap') || name === 'mst' || 
-                               id.includes('username') || id.includes('tendangnhap') || id === 'mst' ||
-                               placeholder.includes('tên đăng nhập') || placeholder.includes('mã số thuế') ||
-                               placeholder.includes('tendangnhap');
+
+            const isUsername = name.includes('username') || name.includes('tendangnhap') || name === 'mst' ||
+              id.includes('username') || id.includes('tendangnhap') || id === 'mst' ||
+              placeholder.includes('tên đăng nhập') || placeholder.includes('mã số thuế') ||
+              placeholder.includes('tendangnhap');
 
             if (isUsername && !mstFilled && input.type !== 'hidden') {
               const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
@@ -895,7 +895,7 @@ function initApp() {
         frag.appendChild(opt);
       });
       this.accountSelect.appendChild(frag);
-      if(this.accountModal.style.display === 'flex') {
+      if (this.accountModal.style.display === 'flex') {
         this.renderAccountList();
       }
     }
@@ -906,10 +906,10 @@ function initApp() {
       this.accounts.forEach(acc => {
         const li = document.createElement('li');
         li.className = 'acc-item';
-        
+
         const info = document.createElement('span');
         info.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
-        
+
         const btnDel = document.createElement('button');
         btnDel.textContent = 'Xóa';
         btnDel.className = 'btn-small';
@@ -920,7 +920,7 @@ function initApp() {
             this.loadAccounts();
           }
         };
-        
+
         li.appendChild(info);
         li.appendChild(btnDel);
         frag.appendChild(li);
@@ -934,7 +934,7 @@ function initApp() {
           if (data.isManual) {
             this.updateBanner.classList.add('visible');
             this.updateTitle.innerHTML = '<span class="spinner"></span> Đang kiểm tra...';
-            this.updateMsg.textContent = 'Đang tìm phiên bản mới nhất trên máy chủ.';
+            this.updateMsg.textContent = 'Đang tìm phiên bản mới nhất trên máy chủ...';
             this.updateActions.style.display = 'none';
             this.updateProgress.style.display = 'none';
           }
@@ -957,7 +957,7 @@ function initApp() {
           if (data.isManual) {
             this.updateBanner.classList.add('visible');
             this.updateTitle.textContent = 'Đã là bản mới nhất';
-            this.updateMsg.textContent = `Phiên bản hiện tại (v${data.version || this.versionBadge.textContent.replace('v','')}) đã là mới nhất.`;
+            this.updateMsg.textContent = `Phiên bản hiện tại (v${data.version || this.versionBadge.textContent.replace('v', '')}) đã là mới nhất.`;
             this.updateActions.style.display = 'flex';
             this.updateDownloadBtn.style.display = 'none';
             this.updateLaterBtn.textContent = 'Đóng';
@@ -1135,10 +1135,10 @@ function initApp() {
       document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         this.dragMoved = true;
-        
+
         let newLeft = e.clientX - offsetX;
         let newTop = e.clientY - offsetY;
-        
+
         const rect = this.container.getBoundingClientRect();
         const maxLeft = window.innerWidth - rect.width;
         const maxTop = window.innerHeight - rect.height;
