@@ -10,11 +10,8 @@ permissions:
 
 jobs:
   build:
-    name: Build for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest]
+    name: Build for Windows
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Code
@@ -32,15 +29,7 @@ jobs:
       - name: Build & Publish Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tắt tự động tìm chứng chỉ để tránh lỗi build khi không có chứng chỉ Apple Developer
-          CSC_IDENTITY_AUTO_DISCOVERY: false 
-        run: |
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            npx electron-builder --win --publish always
-          else
-            npx electron-builder --mac --publish always
-          fi
-        shell: bash
+        run: npx electron-builder --win --publish always
 
   publish:
     name: Publish Release
