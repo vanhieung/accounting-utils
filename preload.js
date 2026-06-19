@@ -1338,39 +1338,9 @@ function initApp() {
         this.skipController = new AbortController();
 
         try {
-          let lastError = null;
-          let downloaded = false;
-          const MAX_RETRIES = 3;
-
-          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            try {
-              await this.downloadRow(currentRow, i, signal, this.skipController.signal);
-              downloaded = true;
-              break;
-            } catch (retryErr) {
-              // Never retry user-initiated aborts or skips
-              if (retryErr.name === 'AbortError') throw retryErr;
-              lastError = retryErr;
-              if (attempt < MAX_RETRIES) {
-                const backoffMs = Math.pow(2, attempt) * 1000; // 2s, 4s
-                this.ui.log(`⟳ Dòng ${i + 1}: Lỗi "${retryErr.message}". Thử lại lần ${attempt} sau ${backoffMs / 1000}s...`);
-                await this.wait(backoffMs);
-                // Re-click the row since DOM state may have changed
-                const refreshedRows = Array.from(document.querySelectorAll(this.selectors.invoiceRows));
-                if (refreshedRows[i]) {
-                  refreshedRows[i].click();
-                  await this.wait(this.behavior.selectionDelayMs);
-                }
-              }
-            }
-          }
-
-          if (downloaded) {
-            this.successCount++;
-            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
-          } else {
-            throw lastError;
-          }
+          await this.downloadRow(currentRow, i, signal, this.skipController.signal);
+          this.successCount++;
+          this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
         } catch (e) {
           if (e.name === 'AbortError' && e.message !== 'Người dùng bấm Bỏ qua') {
             throw e;
@@ -1381,7 +1351,7 @@ function initApp() {
           } else if (e.message.includes('không có file') || e.message.includes('Không có file') || e.message.includes('server không trả file')) {
             this.ui.log(`⏭ Dòng ${i + 1}: Bỏ qua — server không trả file.`);
           } else {
-            this.ui.log(`✗ Dòng ${i + 1}: ${e.message} (đã thử 3 lần)`);
+            this.ui.log(`✗ Dòng ${i + 1}: ${e.message} (đã bỏ qua)`);
           }
         } finally {
           this.skipController = null;
