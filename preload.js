@@ -586,9 +586,16 @@ function initApp() {
               <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
               <button class="btn-small" id="btn-change-folder">Đổi</button>
             </div>
-            <div class="organize-section">
+            <div class="organize-section" style="margin-bottom: 8px;">
               <input type="checkbox" id="chk-organize-mst" />
               <label for="chk-organize-mst">📁 Tạo thư mục riêng theo MST</label>
+            </div>
+            <div class="organize-section" style="background: #fffcf0; border-color: #ffd89b;">
+              <span style="font-weight: 600; font-size: 11px;">Loại Hóa Đơn:</span>
+              <input type="radio" id="rad-invoice-buying" name="rad-invoice-type" value="buying" checked style="cursor: pointer; accent-color: #ff9f43;" />
+              <label for="rad-invoice-buying" style="cursor: pointer; font-weight: 500;">Mua vào</label>
+              <input type="radio" id="rad-invoice-selling" name="rad-invoice-type" value="selling" style="cursor: pointer; accent-color: #ff9f43; margin-left: 8px;" />
+              <label for="rad-invoice-selling" style="cursor: pointer; font-weight: 500;">Bán ra</label>
             </div>
             
             <div class="stats-grid">
@@ -1338,9 +1345,15 @@ function initApp() {
         this.skipController = new AbortController();
 
         try {
-          await this.downloadRow(currentRow, i, signal, this.skipController.signal);
+          const dlResult = await this.downloadRow(currentRow, i, signal, this.skipController.signal);
           this.successCount++;
-          this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
+          if (dlResult && dlResult.misaMatched) {
+            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công. Đã tạo file Excel MISA: ${dlResult.misaOutputName}`);
+          } else if (dlResult && dlResult.misaSkipped) {
+            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công (Không tạo MISA: ${dlResult.misaReason}).`);
+          } else {
+            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`);
+          }
         } catch (e) {
           if (e.name === 'AbortError' && e.message !== 'Người dùng bấm Bỏ qua') {
             throw e;
@@ -1396,12 +1409,15 @@ function initApp() {
       }
 
       const operationId = `${this.currentPage}-${index}-${Date.now()}`;
+      
+      const isSelling = this.ui.shadow.getElementById('rad-invoice-selling').checked;
+      const invoiceType = isSelling ? 'selling' : 'buying';
 
       // Kích hoạt tiến trình tải xuống và chờ IPC phản hồi từ Main Process
       this.setState('DOWNLOADING');
 
       // Đăng ký phiên tải với Backend trước khi click
-      await window.electronAPI.armDownload({ operationId });
+      await window.electronAPI.armDownload({ operationId, invoiceType });
       dlBtn.click();
 
       return new Promise((resolve, reject) => {
@@ -1436,7 +1452,7 @@ function initApp() {
           if (result.operationId !== operationId) return; // Bỏ qua nếu không đúng dòng đang đợi
           cleanup();
           if (result.status === 'success') {
-            resolve();
+            resolve(result);
           } else {
             reject(new Error(result.reason || 'Tải lỗi không rõ nguyên nhân'));
           }

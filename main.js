@@ -4,6 +4,7 @@ const fs = require('fs');
 const fsPromises = require('fs').promises;
 const JSZip = require('jszip');
 const { autoUpdater } = require('electron-updater');
+const { processInvoiceXMLFile } = require('./invoice_matcher');
 
 // Cấu hình thư mục lưu mặc định
 let downloadDestination = path.join(app.getPath('downloads'), 'InvoicesAuto');
@@ -13,6 +14,44 @@ if (!fs.existsSync(downloadDestination)) {
 
 let activeMst = null;
 let organizeFoldersByMst = false;
+
+function getTemplatesDir(type) {
+  const subFolder = type === 'selling' ? 'selling' : 'buying';
+
+  // Option 1: Next to the executable
+  const exeDir = path.dirname(app.getPath('exe'));
+  const exeTemplates = path.join(exeDir, 'assets', subFolder);
+  if (fs.existsSync(exeTemplates)) {
+    return exeTemplates;
+  }
+  
+  // Option 2: In the download destination parent directory (Downloads/assets/buying or /selling)
+  const downloadParentTemplates = path.join(path.dirname(downloadDestination), 'assets', subFolder);
+  if (!fs.existsSync(downloadParentTemplates)) {
+    try {
+      fs.mkdirSync(downloadParentTemplates, { recursive: true });
+      console.log(`Created user templates folder for ${type} at:`, downloadParentTemplates);
+      
+      // Auto-copy default template files from app packages
+      const defaultAppTemplates = path.join(app.getAppPath(), 'assets', subFolder);
+      if (fs.existsSync(defaultAppTemplates)) {
+        const files = fs.readdirSync(defaultAppTemplates);
+        for (const file of files) {
+          fs.copyFileSync(path.join(defaultAppTemplates, file), path.join(downloadParentTemplates, file));
+        }
+        console.log(`Copied default ${type} templates to user templates folder.`);
+      }
+    } catch (e) {
+      console.error(`Lỗi tạo thư mục templates ${subFolder} ở Downloads:`, e);
+    }
+  }
+  if (fs.existsSync(downloadParentTemplates)) {
+    return downloadParentTemplates;
+  }
+  
+  // Option 3: Fallback inside app directory
+  return path.join(app.getAppPath(), 'assets', subFolder);
+}
 
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json');
 
@@ -150,8 +189,10 @@ function openBatchDownloadWindow() {
       const now = Date.now();
       const matchedOpIndex = pendingOperations.findIndex(op => now - op.timestamp < 60000);
       let opId = null;
+      let invoiceType = 'buying';
       if (matchedOpIndex >= 0) {
         opId = pendingOperations[matchedOpIndex].operationId;
+        invoiceType = pendingOperations[matchedOpIndex].invoiceType || 'buying';
         // Hủy timer no-download-started vì download đã bắt đầu
         if (pendingOperations[matchedOpIndex].noDownloadTimer) {
           clearTimeout(pendingOperations[matchedOpIndex].noDownloadTimer);
@@ -207,6 +248,7 @@ function openBatchDownloadWindow() {
 
           let finalStatus = 'success';
           let failReason = null;
+          const xmlFilesToProcess = [];
 
           // Tự động giải nén XML và xoá ZIP
           if (savePath.toLowerCase().endsWith('.zip')) {
@@ -235,6 +277,7 @@ function openBatchDownloadWindow() {
                     }
 
                     await fsPromises.writeFile(destPath, content);
+                    xmlFilesToProcess.push(destPath);
                     extractedCount++;
                   })());
                 }
@@ -258,15 +301,61 @@ function openBatchDownloadWindow() {
               finalStatus = 'error';
               failReason = 'Lỗi giải nén ZIP';
             }
+          } else if (savePath.toLowerCase().endsWith('.xml')) {
+            xmlFilesToProcess.push(savePath);
+          }
+
+          let matchedTemplates = [];
+          let skippedReasons = [];
+          if (finalStatus === 'success' && xmlFilesToProcess.length > 0) {
+            const templateDir = getTemplatesDir(invoiceType);
+            for (const xmlFile of xmlFilesToProcess) {
+              try {
+                if (fs.existsSync(templateDir)) {
+                  const result = processInvoiceXMLFile(xmlFile, templateDir, invoiceType);
+                  if (result.success) {
+                    matchedTemplates.push({
+                      template: result.recommendedTemplate,
+                      templateName: result.recommendedTemplateName,
+                      outputName: path.basename(result.outputPath)
+                    });
+                    // Xóa file XML sau khi chuyển đổi thành công sang Excel
+                    try {
+                      fs.unlinkSync(xmlFile);
+                      console.log('Deleted XML file after successful MISA conversion:', xmlFile);
+                    } catch (unlinkErr) {
+                      console.error('Lỗi khi xóa file XML:', unlinkErr);
+                    }
+                  } else {
+                    skippedReasons.push(result.reason || "Không tìm thấy template phù hợp");
+                  }
+                } else {
+                  skippedReasons.push("Không tìm thấy thư mục mẫu");
+                }
+              } catch (err) {
+                console.error('Error processing XML for MISA:', err);
+                skippedReasons.push(`Lỗi xử lý: ${err.message}`);
+              }
+            }
           }
 
           if (batchDownloadWindow && !batchDownloadWindow.isDestroyed()) {
-            batchDownloadWindow.webContents.send('download-completed', {
+            const payload = {
               operationId: opId,
               fileName,
               status: finalStatus,
               reason: failReason
-            });
+            };
+            if (matchedTemplates.length > 0) {
+              payload.misaMatched = true;
+              payload.misaTemplate = matchedTemplates[0].template;
+              payload.misaTemplateName = matchedTemplates[0].templateName;
+              payload.misaOutputName = matchedTemplates[0].outputName;
+            } else if (skippedReasons.length > 0) {
+              payload.misaSkipped = true;
+              payload.misaReason = skippedReasons.join(', ');
+            }
+            batchDownloadWindow.webContents.send('download-completed', payload);
           }
         } else {
           console.log(`Download failed: ${state}`);
@@ -445,6 +534,7 @@ ipcMain.handle('arm-download', (event, payload) => {
 
   pendingOperations.push({
     operationId: payload.operationId,
+    invoiceType: payload.invoiceType || 'buying',
     timestamp: now,
     noDownloadTimer: noDownloadTimer
   });

@@ -54,6 +54,7 @@
   "author": "AccountingApp",
   "dependencies": {
     "electron-updater": "^6.3.9",
+    "fast-xml-parser": "^5.10.0",
     "jszip": "^3.10.1",
     "xlsx": "^0.18.5"
   },
