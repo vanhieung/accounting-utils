@@ -6,6 +6,10 @@ const JSZip = require('jszip');
 const { autoUpdater } = require('electron-updater');
 const { processInvoiceXMLFile } = require('./invoice_matcher');
 
+// Thiết lập tên ứng dụng và thư mục userData nhất quán giữa Dev và Production để duy trì session
+app.name = 'Invoice Batch Downloader';
+app.setPath('userData', path.join(app.getPath('appData'), 'Invoice Batch Downloader'));
+
 // Cấu hình thư mục lưu mặc định
 let downloadDestination = path.join(app.getPath('downloads'), 'InvoicesAuto');
 if (!fs.existsSync(downloadDestination)) {
@@ -18,7 +22,12 @@ let organizeFoldersByMst = false;
 function getTemplatesDir(type) {
   const subFolder = type === 'selling' ? 'selling' : 'buying';
 
-  // Option 1: Next to the executable
+  // Trong môi trường phát triển (chưa đóng gói), ưu tiên sử dụng trực tiếp thư mục assets trong dự án
+  if (!app.isPackaged) {
+    return path.join(app.getAppPath(), 'assets', subFolder);
+  }
+
+  // Option 1: Next to the executable (cho phép ghi đè mẫu ở môi trường sản xuất)
   const exeDir = path.dirname(app.getPath('exe'));
   const exeTemplates = path.join(exeDir, 'assets', subFolder);
   if (fs.existsSync(exeTemplates)) {
@@ -49,7 +58,7 @@ function getTemplatesDir(type) {
     return downloadParentTemplates;
   }
   
-  // Option 3: Fallback inside app directory
+  // Option 3: Fallback inside app directory (app.asar)
   return path.join(app.getAppPath(), 'assets', subFolder);
 }
 
