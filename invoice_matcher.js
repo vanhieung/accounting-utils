@@ -466,9 +466,22 @@ const valueMapper = {
     "Diễn giải/Lý do chi/Nội dung thanh toán": (invoice, item) => invoice.type === 'selling'
         ? `Bán dịch vụ cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`
         : `Mua dịch vụ của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
+    "Diễn giải/Lý do chi": (invoice, item) => invoice.type === 'selling'
+        ? `Giảm giá/Trả lại hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`
+        : `Giảm giá/Trả lại hàng của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
+    "Diễn giải/Lý do nộp": (invoice, item) =>
+        `Giảm giá hàng mua của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
     "Trích yếu": (invoice, item) => invoice.type === 'selling'
         ? `Bán hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`
         : `Mua hàng của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
+    "Lý do xuất": (invoice, item) =>
+        `Bán hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`,
+    "Hình thức TT": (invoice, item) => {
+        const httt = (invoice.httt || "").toUpperCase();
+        if (httt === "TM") return 1; // Tiền mặt
+        if (httt === "CK") return 2; // Chuyển khoản
+        return 0; // Chưa thanh toán
+    },
 
     "Loại tiền": (invoice, item) => invoice.dvt_te,
     "Tỷ giá": (invoice, item) => invoice.dvt_te === "VND" ? 1 : null,
