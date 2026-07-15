@@ -171,7 +171,7 @@ function parseInvoiceXML(xmlPath) {
 // Classifier Engine
 function classifyInvoice(invoice, type = 'buying') {
     const items = invoice.items || [];
-
+    
     // Analyze item keywords
     let serviceScore = 0;
     let goodsScore = 0;
@@ -207,7 +207,7 @@ function classifyInvoice(invoice, type = 'buying') {
     const isPhysicalGoods = goodsScore >= serviceScore && goodsScore > 0;
     const isConsumable = consumableScore > 0;
     const isStockable = stockableScore > 0;
-
+    
     const hasInvoiceNumber = invoice.so_hdon !== undefined && invoice.so_hdon !== null;
     const allPositiveAmounts = items.every(item => (item.thanh_tien || 0) >= 0);
 
@@ -350,7 +350,7 @@ const valueMapper = {
     "Số hóa đơn": (invoice, item) => invoice.so_hdon,
     "Ngày hóa đơn": (invoice, item) => formatDate(invoice.ngay_lap),
     "Ngày hóa đơn (*)": (invoice, item) => formatDate(invoice.ngay_lap),
-
+    
     // Voucher numbers / So chung tu
     "Số chứng từ (*)": (invoice, item) => invoice.so_hdon,
     "Số chứng từ": (invoice, item) => invoice.so_hdon,
@@ -364,7 +364,7 @@ const valueMapper = {
     "Số báo giá": (invoice, item) => invoice.so_hdon,
     "STT Hóa đơn (*)": (invoice, item) => 1,
     "Số phiếu xuất": (invoice, item) => invoice.so_hdon,
-
+    
     // Partner reference
     "Mã nhà cung cấp": (invoice, item) => invoice.nban_mst,
     "Mã nhà cung cấp (*)": (invoice, item) => invoice.nban_mst,
@@ -380,7 +380,7 @@ const valueMapper = {
     "Địa chỉ khách hàng": (invoice, item) => invoice.nmua_dchi,
     "Đối tượng": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_mst : invoice.nban_mst,
     "Mã đối tượng": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_mst : invoice.nban_mst,
-
+    
     // Accounts Defaults
     "TK chi phí (*)": (invoice, item) => "6422",
     "TK kho (*)": (invoice, item) => "1561",
@@ -424,7 +424,7 @@ const valueMapper = {
     // General transaction types
     "Hình thức mua hàng": (invoice, item) => {
         // Hóa đơn điện tử lấy từ web thuế mặc định là mua hàng trong nước (1)
-        return 1;
+        return 1; 
     },
     "Hình thức bán hàng": (invoice, item) => {
         if (invoice.template === "Hoa_don_ban_hang.xls") {
@@ -460,7 +460,7 @@ const valueMapper = {
 
     // Shared or conditional
     "Địa chỉ": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_dchi : invoice.nban_dchi,
-    "Diễn giải": (invoice, item) => invoice.type === 'selling'
+    "Diễn giải": (invoice, item) => invoice.type === 'selling' 
         ? `Bán hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`
         : `Mua hàng của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
     "Diễn giải/Lý do chi/Nội dung thanh toán": (invoice, item) => invoice.type === 'selling'
@@ -511,10 +511,10 @@ function fillTemplate(invoice, templateFile, templateDir) {
     // Build workbook data
     const rows = [headers];
     const items = invoice.items || [];
-
+    
     // In case there are no items, write at least one line
     const loopItems = items.length > 0 ? items : [{}];
-
+    
     loopItems.forEach(item => {
         const row = headers.map(header => {
             const mapper = valueMapper[header];
@@ -596,7 +596,7 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
     if (!fs.existsSync(finalOutputDir)) {
         fs.mkdirSync(finalOutputDir, { recursive: true });
     }
-
+    
     const xmlFile = path.basename(xmlPath);
     const outFileName = `${best.file.replace('.xls', '')}.xlsx`;
     const outPath = path.join(finalOutputDir, outFileName);
@@ -609,15 +609,15 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
             workbook = xlsx.read(fileBuffer, { type: 'buffer' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-
+            
             // Chuyển dữ liệu của sheet thành mảng 2 chiều
             const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
             const headers = rows[0] || [];
-
+            
             // Ánh xạ dữ liệu dòng mới
             const items = invoice.items || [];
             const loopItems = items.length > 0 ? items : [{}];
-
+            
             loopItems.forEach(item => {
                 const row = headers.map(header => {
                     const mapper = valueMapper[header];
@@ -628,10 +628,10 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
                 });
                 rows.push(row);
             });
-
+            
             // Cập nhật lại sheet với dữ liệu đã gộp
             const newWs = xlsx.utils.aoa_to_sheet(rows);
-
+            
             // Autofit độ rộng các cột
             const maxCols = headers.length;
             const wscols = [];
@@ -646,7 +646,7 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
                 wscols.push({ wch: Math.min(maxLen + 2, 45) });
             }
             newWs['!cols'] = wscols;
-
+            
             workbook.Sheets[sheetName] = newWs;
         } catch (readErr) {
             console.error(`Lỗi khi đọc/gộp file Excel đã tồn tại ${outPath}, tiến hành ghi mới:`, readErr);
@@ -655,7 +655,7 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
     } else {
         workbook = fillTemplate(invoice, best.file, templateDir);
     }
-
+    
     xlsx.writeFile(workbook, outPath);
 
     return {
