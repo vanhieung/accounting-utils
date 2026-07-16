@@ -1409,7 +1409,7 @@ function initApp() {
       }
 
       const operationId = `${this.currentPage}-${index}-${Date.now()}`;
-      
+
       const isSelling = this.ui.shadow.getElementById('rad-invoice-selling').checked;
       const invoiceType = isSelling ? 'selling' : 'buying';
 
