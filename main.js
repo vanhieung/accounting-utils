@@ -2,9 +2,15 @@ const { app, BrowserWindow, session, ipcMain, dialog, shell, safeStorage, Menu }
 const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
-const JSZip = require('jszip');
 const { autoUpdater } = require('electron-updater');
 const { processInvoiceXMLFile } = require('./invoice_matcher');
+
+// Lazy-loaded heavy modules — only imported on first use to speed up app startup
+let _JSZip = null;
+function getJSZip() {
+  if (!_JSZip) _JSZip = require('jszip');
+  return _JSZip;
+}
 
 // Thiết lập tên ứng dụng và thư mục userData nhất quán giữa Dev và Production để duy trì session
 app.name = 'Invoice Batch Downloader';
@@ -12,9 +18,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'Invoice Batch Downloa
 
 // Cấu hình thư mục lưu mặc định
 let downloadDestination = path.join(app.getPath('downloads'), 'InvoicesAuto');
-if (!fs.existsSync(downloadDestination)) {
-  fs.mkdirSync(downloadDestination, { recursive: true });
-}
+fs.mkdirSync(downloadDestination, { recursive: true }); // recursive: true is a no-op if dir exists
 
 let activeMst = null;
 let organizeFoldersByMst = false;
@@ -45,10 +49,12 @@ function getTemplatesDir(type) {
       const defaultAppTemplates = path.join(app.getAppPath(), 'assets', subFolder);
       if (fs.existsSync(defaultAppTemplates)) {
         const files = fs.readdirSync(defaultAppTemplates);
-        for (const file of files) {
-          fs.copyFileSync(path.join(defaultAppTemplates, file), path.join(downloadParentTemplates, file));
-        }
-        console.log(`Copied default ${type} templates to user templates folder.`);
+        const copyPromises = files.map(file =>
+          fsPromises.copyFile(path.join(defaultAppTemplates, file), path.join(downloadParentTemplates, file))
+        );
+        Promise.all(copyPromises).then(() => {
+          console.log(`Copied default ${type} templates to user templates folder.`);
+        }).catch(err => console.error(`Error copying templates:`, err));
       }
     } catch (e) {
       console.error(`Lỗi tạo thư mục templates ${subFolder} ở Downloads:`, e);
@@ -222,10 +228,8 @@ function openBatchDownloadWindow() {
 
       let actualDestination = downloadDestination;
       if (organizeFoldersByMst && activeMst) {
-        actualDestination = path.join(downloadDestination, activeMst);
-        if (!fs.existsSync(actualDestination)) {
-          fs.mkdirSync(actualDestination, { recursive: true });
-        }
+         actualDestination = path.join(downloadDestination, activeMst);
+         fs.mkdirSync(actualDestination, { recursive: true });
       }
       let savePath = path.join(actualDestination, fileName);
 
@@ -263,7 +267,7 @@ function openBatchDownloadWindow() {
           if (savePath.toLowerCase().endsWith('.zip')) {
             try {
               const fileData = await fsPromises.readFile(savePath);
-              const zip = await JSZip.loadAsync(fileData);
+              const zip = await getJSZip().loadAsync(fileData);
               let extractedCount = 0;
               const promises = [];
 
@@ -381,25 +385,38 @@ function openBatchDownloadWindow() {
 
 app.whenReady().then(() => {
   // Tự động chuyển session cookies thành persistent cookies để duy trì trạng thái đăng nhập
+  // Debounced: batch cookie persistence to avoid hammering the store on rapid page loads
   const customSession = session.fromPartition('persist:invoice-session');
-  customSession.cookies.on('changed', async (event, cookie, cause, removed) => {
+  const pendingCookies = new Map();
+  let cookieFlushTimer = null;
+
+  function flushPendingCookies() {
+    const batch = Array.from(pendingCookies.values());
+    pendingCookies.clear();
+    cookieFlushTimer = null;
+    batch.forEach(async (cookieData) => {
+      try {
+        await customSession.cookies.set(cookieData);
+      } catch (err) {
+        console.error('Lỗi khi đổi session cookie thành persistent cookie:', err);
+      }
+    });
+  }
+
+  customSession.cookies.on('changed', (event, cookie, cause, removed) => {
     if (removed) return;
     if (cookie.session) {
       const url = `${cookie.secure ? 'https' : 'http'}://${cookie.domain.replace(/^\./, '')}${cookie.path}`;
       const expirationDate = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60; // Hết hạn sau 30 ngày
-      try {
-        await customSession.cookies.set({
-          url: url,
-          name: cookie.name,
-          value: cookie.value,
-          domain: cookie.domain,
-          path: cookie.path,
-          secure: cookie.secure,
-          httpOnly: cookie.httpOnly,
-          expirationDate: expirationDate
-        });
-      } catch (err) {
-        console.error('Lỗi khi đổi session cookie thành persistent cookie:', err);
+      const key = `${cookie.domain}|${cookie.path}|${cookie.name}`;
+      pendingCookies.set(key, {
+        url, name: cookie.name, value: cookie.value,
+        domain: cookie.domain, path: cookie.path,
+        secure: cookie.secure, httpOnly: cookie.httpOnly,
+        expirationDate
+      });
+      if (!cookieFlushTimer) {
+        cookieFlushTimer = setTimeout(flushPendingCookies, 200);
       }
     }
   });
@@ -570,12 +587,17 @@ ipcMain.handle('open-folder', (event, folderPath) => {
   shell.openPath(target);
 });
 
+// Cache widget icon in memory to avoid re-reading a 414KB PNG on every renderer request
+let cachedWidgetIconBase64 = undefined; // undefined = not yet loaded
 ipcMain.handle('get-widget-icon', async () => {
+  if (cachedWidgetIconBase64 !== undefined) return cachedWidgetIconBase64;
   try {
     const iconPath = path.join(__dirname, 'widget_icon.png');
     const data = await fsPromises.readFile(iconPath);
-    return `data:image/png;base64,${data.toString('base64')}`;
+    cachedWidgetIconBase64 = `data:image/png;base64,${data.toString('base64')}`;
+    return cachedWidgetIconBase64;
   } catch (e) {
+    cachedWidgetIconBase64 = null;
     return null;
   }
 });
@@ -674,7 +696,7 @@ ipcMain.handle('import-excel-accounts', async () => {
     }
 
     const filePath = result.filePaths[0];
-    const xlsx = require('xlsx');
+    const xlsx = require('xlsx'); // loaded on demand (import path only)
     const workbook = xlsx.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
@@ -683,7 +705,7 @@ ipcMain.handle('import-excel-accounts', async () => {
 
     const accounts = await loadAccounts();
     let importedCount = 0;
-    const mstRegex = /^\d{10}(-\d{3})?$/;
+    const mstRegex = /^\d{10}(-\d{3})?$/; // compiled once per import session
 
     for (const row of data) {
       if (!Array.isArray(row)) continue;

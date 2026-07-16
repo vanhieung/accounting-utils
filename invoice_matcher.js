@@ -13,7 +13,7 @@ const path = require('path');
 const { XMLParser } = require('fast-xml-parser');
 const xlsx = require('xlsx');
 
-// Keywords and Classification Criteria
+// Keywords and Classification Criteria — Sets for O(1) lookup instead of Array.some()
 const SERVICE_KEYWORDS = [
     "dịch vụ", "phí", "bản quyền", "thuê", "bảo trì", "bảo hành",
     "tư vấn", "vận chuyển", "cước", "quảng cáo", "hosting", "domain",
@@ -22,12 +22,14 @@ const SERVICE_KEYWORDS = [
     "internet", "điện thoại"
 ];
 
-const GOODS_DVT = [
+const GOODS_DVT_SET = new Set([
     "cái", "chiếc", "hộp", "thùng", "lốc", "kg", "tấn", "m", "m2",
     "bộ", "cuộn", "chai", "lon", "gói", "túi", "bao", "quyển", "tờ",
     "lít", "can", "bình", "hũ", "thanh", "tấm", "miếng", "viên",
     "đôi", "cây", "quả", "trái", "bịch", "tuýp", "ống"
-];
+]);
+
+const SERVICE_DVT_SET = new Set(["bản", "gói", "lần", "tháng", "năm"]);
 
 const CONSUMABLE_KEYWORDS = [
     "bánh", "nước", "sữa", "cà phê", "trà", "đường", "muối",
@@ -186,9 +188,9 @@ function classifyInvoice(invoice, type = 'buying') {
             serviceScore += 2;
         }
 
-        if (GOODS_DVT.includes(dvt)) {
+        if (GOODS_DVT_SET.has(dvt)) {
             goodsScore += 2;
-        } else if (["bản", "gói", "lần", "tháng", "năm"].includes(dvt)) {
+        } else if (SERVICE_DVT_SET.has(dvt)) {
             serviceScore += 1;
         } else {
             goodsScore += 1;
@@ -505,16 +507,41 @@ const valueMapper = {
     "Ngày báo giá": (invoice, item) => formatDate(invoice.ngay_lap),
 };
 
+// Memoize template headers to avoid re-reading the same Excel file repeatedly
+const _templateHeaderCache = new Map();
+
 function getTemplateHeaders(templatePath) {
+    if (_templateHeaderCache.has(templatePath)) {
+        return _templateHeaderCache.get(templatePath);
+    }
     const templateBuffer = fs.readFileSync(templatePath);
     const workbook = xlsx.read(templateBuffer, { type: 'buffer' });
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     const data = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-    return {
+    const result = {
         headers: data[0] || [],
         sheetName: firstSheetName
     };
+    _templateHeaderCache.set(templatePath, result);
+    return result;
+}
+
+// Reusable column autofit utility
+function autofitColumns(rows, numCols) {
+    const wscols = new Array(numCols);
+    for (let c = 0; c < numCols; c++) {
+        let maxLen = 0;
+        for (let r = 0; r < rows.length; r++) {
+            const val = rows[r][c];
+            if (val !== undefined && val !== null) {
+                const len = String(val).length;
+                if (len > maxLen) maxLen = len;
+            }
+        }
+        wscols[c] = { wch: Math.min(maxLen + 2, 45) };
+    }
+    return wscols;
 }
 
 function fillTemplate(invoice, templateFile, templateDir) {
@@ -543,19 +570,7 @@ function fillTemplate(invoice, templateFile, templateDir) {
     const newWs = xlsx.utils.aoa_to_sheet(rows);
 
     // Dynamic column width autofit
-    const maxCols = headers.length;
-    const wscols = [];
-    for (let c = 0; c < maxCols; c++) {
-        let maxLen = 0;
-        rows.forEach(r => {
-            const val = r[c];
-            if (val !== undefined && val !== null) {
-                maxLen = Math.max(maxLen, String(val).length);
-            }
-        });
-        wscols.push({ wch: Math.min(maxLen + 2, 45) });
-    }
-    newWs['!cols'] = wscols;
+    newWs['!cols'] = autofitColumns(rows, headers.length);
 
     xlsx.utils.book_append_sheet(newWb, newWs, sheetName);
     return newWb;
@@ -645,20 +660,8 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
             // Cập nhật lại sheet với dữ liệu đã gộp
             const newWs = xlsx.utils.aoa_to_sheet(rows);
             
-            // Autofit độ rộng các cột
-            const maxCols = headers.length;
-            const wscols = [];
-            for (let c = 0; c < maxCols; c++) {
-                let maxLen = 0;
-                rows.forEach(r => {
-                    const val = r[c];
-                    if (val !== undefined && val !== null) {
-                        maxLen = Math.max(maxLen, String(val).length);
-                    }
-                });
-                wscols.push({ wch: Math.min(maxLen + 2, 45) });
-            }
-            newWs['!cols'] = wscols;
+            // Autofit column widths using shared utility
+            newWs['!cols'] = autofitColumns(rows, headers.length);
             
             workbook.Sheets[sheetName] = newWs;
         } catch (readErr) {

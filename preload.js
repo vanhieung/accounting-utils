@@ -810,13 +810,13 @@ function initApp() {
         }
         const acc = this.accounts.find(a => a.id === selectedId);
         if (acc) {
-          // Find inputs on the page
+          // Cache the native setter once instead of looking it up per input
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
           const inputs = document.querySelectorAll('input');
           let mstFilled = false;
           let pwdFilled = false;
 
           for (const input of inputs) {
-            // Tìm ô input MST/Tên đăng nhập
             const name = (input.name || '').toLowerCase();
             const id = (input.id || '').toLowerCase();
             const placeholder = (input.placeholder || '').toLowerCase();
@@ -827,12 +827,10 @@ function initApp() {
               placeholder.includes('tendangnhap');
 
             if (isUsername && !mstFilled && input.type !== 'hidden') {
-              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
               nativeInputValueSetter.call(input, acc.mst);
               input.dispatchEvent(new Event('input', { bubbles: true }));
               mstFilled = true;
             } else if (input.type === 'password' && !pwdFilled) {
-              const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
               nativeInputValueSetter.call(input, acc.password);
               input.dispatchEvent(new Event('input', { bubbles: true }));
               pwdFilled = true;
@@ -1072,6 +1070,10 @@ function initApp() {
       el.className = 'log-item';
       el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
       this.logContainer.appendChild(el);
+      // Cap log entries to prevent unbounded DOM growth during long sessions
+      while (this.logContainer.childElementCount > 200) {
+        this.logContainer.removeChild(this.logContainer.firstElementChild);
+      }
       this.logContainer.scrollTop = this.logContainer.scrollHeight;
     }
 
@@ -1424,20 +1426,23 @@ function initApp() {
         let cleaned = false;
         let cleanup = () => { };
 
-        // Kiểm tra thông báo lỗi từ web (VD: .ant-message-error) để skip ngay lập tức
-        const errorCheckInterval = setInterval(() => {
-          const errorMsg = document.querySelector('.ant-message-error, .ant-message-notice-error, .ant-notification-notice-error, .ant-message-custom-content.ant-message-error');
-          if (errorMsg && errorMsg.innerText) {
-            const errorText = errorMsg.innerText;
-            // Cố gắng đóng thông báo để không ảnh hưởng dòng sau
-            const closeBtn = document.querySelector('.ant-message-notice-close, .ant-notification-notice-close');
-            if (closeBtn) closeBtn.click();
-            else errorMsg.remove(); // Fallback xóa khỏi DOM
-
-            cleanup();
-            reject(new Error(`Hệ thống web báo lỗi: ${errorText}`));
-          }
-        }, 500);
+        // Use MutationObserver instead of setInterval to detect web error messages efficiently
+        let errorObserver = null;
+        const setupErrorObserver = () => {
+          errorObserver = new MutationObserver((mutations) => {
+            const errorMsg = document.querySelector('.ant-message-error, .ant-message-notice-error, .ant-notification-notice-error, .ant-message-custom-content.ant-message-error');
+            if (errorMsg && errorMsg.innerText) {
+              const errorText = errorMsg.innerText;
+              const closeBtn = document.querySelector('.ant-message-notice-close, .ant-notification-notice-close');
+              if (closeBtn) closeBtn.click();
+              else errorMsg.remove();
+              cleanup();
+              reject(new Error(`Hệ thống web báo lỗi: ${errorText}`));
+            }
+          });
+          errorObserver.observe(document.body, { childList: true, subtree: true });
+        };
+        setupErrorObserver();
 
         // Timeout dự phòng — main process sẽ gửi lỗi sau 2s nếu không có file,
         // timer này là safety net cuối cùng
@@ -1462,7 +1467,7 @@ function initApp() {
           if (cleaned) return;
           cleaned = true;
           clearTimeout(timeoutId);
-          clearInterval(errorCheckInterval);
+          if (errorObserver) { errorObserver.disconnect(); errorObserver = null; }
           unsubscribe();
         };
 
@@ -1516,12 +1521,15 @@ function initApp() {
   // Khởi chạy runner
   const runner = new InvoiceRunner();
 
-  // Đảm bảo UI luôn hiển thị và không bị React xóa/ghi đè trong quá trình chuyển trang
-  setInterval(() => {
+  // Use MutationObserver instead of setInterval to re-attach UI when React removes it
+  const bodyObserver = new MutationObserver(() => {
     if (runner.ui && runner.ui.container && document.body && !document.getElementById('electron-batch-dl-root')) {
       document.body.appendChild(runner.ui.container);
     }
-  }, 1000);
+  });
+  if (document.body) {
+    bodyObserver.observe(document.body, { childList: true });
+  }
 }
 
 if (document.readyState === 'complete' || document.readyState === 'interactive') {
