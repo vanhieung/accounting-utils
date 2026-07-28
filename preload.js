@@ -20,6 +20,8 @@ const api = {
   setActiveMst: (mst) => ipcRenderer.invoke('set-active-mst', mst),
   setFolderOrganization: (enabled) => ipcRenderer.invoke('set-folder-organization', enabled),
   getFolderOrganization: () => ipcRenderer.invoke('get-folder-organization'),
+  setKeepXml: (enabled) => ipcRenderer.invoke('set-keep-xml', enabled),
+  getKeepXml: () => ipcRenderer.invoke('get-keep-xml'),
   exportAccountsExcel: () => ipcRenderer.invoke('export-accounts-excel'),
   // Auto-update APIs
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
@@ -590,6 +592,10 @@ function initApp() {
               <input type="checkbox" id="chk-organize-mst" />
               <label for="chk-organize-mst">📁 Tạo thư mục riêng theo MST</label>
             </div>
+            <div class="organize-section" style="margin-bottom: 8px;">
+              <input type="checkbox" id="chk-keep-xml" />
+              <label for="chk-keep-xml">📄 Giữ nguyên file XML (không xóa)</label>
+            </div>
             <div class="organize-section" style="background: #fffcf0; border-color: #ffd89b;">
               <span style="font-weight: 600; font-size: 11px;">Loại Hóa Đơn:</span>
               <input type="radio" id="rad-invoice-buying" name="rad-invoice-type" value="buying" checked style="cursor: pointer; accent-color: #ff9f43;" />
@@ -854,6 +860,16 @@ function initApp() {
       this.chkOrganizeMst.addEventListener('change', () => {
         window.electronAPI.setFolderOrganization(this.chkOrganizeMst.checked);
         this.log(this.chkOrganizeMst.checked ? '📁 Bật tạo thư mục theo MST' : '📁 Tắt tạo thư mục theo MST');
+      });
+
+      // Keep XML checkbox (persisted)
+      this.chkKeepXml = this.shadow.getElementById('chk-keep-xml');
+      window.electronAPI.getKeepXml().then(val => {
+        this.chkKeepXml.checked = !!val;
+      });
+      this.chkKeepXml.addEventListener('change', () => {
+        window.electronAPI.setKeepXml(this.chkKeepXml.checked);
+        this.log(this.chkKeepXml.checked ? '📄 Bật giữ nguyên file XML' : '📄 Tắt giữ nguyên file XML (tự động xóa sau chuyển đổi)');
       });
 
       // Keyboard shortcuts

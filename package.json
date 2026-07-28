@@ -9,6 +9,8 @@
   },
   "scripts": {
     "start": "electron .",
+    "dev": "electron .",
+    "dev:watch": "nodemon --watch main.js --watch preload.js --watch invoice_matcher.js --exec electron .",
     "dist": "electron-builder --win --mac",
     "publish": "dotenv -- electron-builder --win --mac --publish always",
     "dist:win": "electron-builder --win",
@@ -61,6 +63,8 @@
   "devDependencies": {
     "dotenv-cli": "^11.0.0",
     "electron": "^42.4.0",
-    "electron-builder": "^26.15.2"
+    "electron-builder": "^26.15.2",
+    "electron-reloader": "^1.2.3",
+    "nodemon": "^3.1.14"
   }
 }

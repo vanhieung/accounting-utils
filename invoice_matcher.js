@@ -146,6 +146,7 @@ function parseInvoiceXML(xmlPath) {
                 tienThue = Math.round(thTien * rate);
             }
             return {
+                tchat: item.TChat !== undefined ? String(item.TChat).trim() : "",
                 ma: item.MHHDVu || "",
                 ten: item.THHDVu || "",
                 dvt: item.DVTinh || "",
@@ -174,7 +175,7 @@ function parseInvoiceXML(xmlPath) {
 function classifyInvoice(invoice, type = 'buying') {
     const items = invoice.items || [];
     
-    // Analyze item keywords
+    // Analyze item keywords & TChat tags
     let serviceScore = 0;
     let goodsScore = 0;
     let consumableScore = 0;
@@ -183,6 +184,13 @@ function classifyInvoice(invoice, type = 'buying') {
     items.forEach(item => {
         const name = (item.ten || "").toLowerCase();
         const dvt = (item.dvt || "").toLowerCase();
+        const tchat = String(item.tchat || "").trim();
+
+        if (tchat === "2") {
+            serviceScore += 3;
+        } else if (tchat === "1") {
+            goodsScore += 2;
+        }
 
         if (SERVICE_KEYWORDS.some(kw => name.includes(kw))) {
             serviceScore += 2;
@@ -192,7 +200,7 @@ function classifyInvoice(invoice, type = 'buying') {
             goodsScore += 2;
         } else if (SERVICE_DVT_SET.has(dvt)) {
             serviceScore += 1;
-        } else {
+        } else if (dvt) {
             goodsScore += 1;
         }
 
@@ -585,7 +593,7 @@ function fillTemplate(invoice, templateFile, templateDir) {
  * @param {string} [outputDir] - Directory to write the output Excel file. If omitted, saves in the same directory as the XML file.
  * @returns {object} Result summary
  */
-function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir = null) {
+function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir = null, activeMst = null) {
     if (!fs.existsSync(xmlPath)) {
         throw new Error(`XML file does not exist: ${xmlPath}`);
     }
@@ -596,6 +604,15 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
     const invoice = parseInvoiceXML(xmlPath);
     if (!invoice) {
         throw new Error(`Could not parse invoice XML at ${xmlPath}`);
+    }
+
+    // Auto-detect buying vs selling if activeMst is provided
+    if (activeMst) {
+        if (invoice.nban_mst === activeMst) {
+            type = 'selling';
+        } else if (invoice.nmua_mst === activeMst) {
+            type = 'buying';
+        }
     }
 
     // Set context type so mapper functions can make correct buying/selling decisions
@@ -620,7 +637,13 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
         throw new Error(`Recommended template file not found: ${best.file} in ${templateDir}`);
     }
 
-    const finalOutputDir = outputDir || path.dirname(xmlPath);
+    let finalOutputDir = outputDir || path.dirname(xmlPath);
+    // Tự động phân loại thư mục theo Tháng/Năm (YYYY-MM) dựa trên ngày lập hóa đơn
+    if (invoice.ngay_lap && String(invoice.ngay_lap).length >= 7) {
+        const periodFolder = String(invoice.ngay_lap).substring(0, 7); // YYYY-MM
+        finalOutputDir = path.join(finalOutputDir, periodFolder);
+    }
+
     if (!fs.existsSync(finalOutputDir)) {
         fs.mkdirSync(finalOutputDir, { recursive: true });
     }

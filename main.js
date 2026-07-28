@@ -12,6 +12,17 @@ function getJSZip() {
   return _JSZip;
 }
 
+// Enable hot reload in development mode
+try {
+  if (!app.isPackaged) {
+    require('electron-reloader')(module, {
+      ignore: ['node_modules', 'dist', 'build', '*.xlsx', '*.xml', '.git']
+    });
+  }
+} catch (e) {
+  // Ignored if electron-reloader is missing or in production
+}
+
 // Thiết lập tên ứng dụng và thư mục userData nhất quán giữa Dev và Production để duy trì session
 app.name = 'Invoice Batch Downloader';
 app.setPath('userData', path.join(app.getPath('appData'), 'Invoice Batch Downloader'));
@@ -22,6 +33,7 @@ fs.mkdirSync(downloadDestination, { recursive: true }); // recursive: true is a 
 
 let activeMst = null;
 let organizeFoldersByMst = false;
+let keepXmlFiles = false;
 
 function getTemplatesDir(type) {
   const subFolder = type === 'selling' ? 'selling' : 'buying';
@@ -103,6 +115,7 @@ function saveSetting(key, value) {
 // Load initial settings
 const _initSettings = loadSettings();
 organizeFoldersByMst = !!_initSettings.organizeFoldersByMst;
+keepXmlFiles = !!_initSettings.keepXmlFiles;
 
 const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
 
@@ -325,19 +338,33 @@ function openBatchDownloadWindow() {
             for (const xmlFile of xmlFilesToProcess) {
               try {
                 if (fs.existsSync(templateDir)) {
-                  const result = processInvoiceXMLFile(xmlFile, templateDir, invoiceType);
+                  const result = processInvoiceXMLFile(xmlFile, templateDir, invoiceType, null, activeMst);
                   if (result.success) {
                     matchedTemplates.push({
                       template: result.recommendedTemplate,
                       templateName: result.recommendedTemplateName,
                       outputName: path.basename(result.outputPath)
                     });
-                    // Xóa file XML sau khi chuyển đổi thành công sang Excel
-                    try {
-                      fs.unlinkSync(xmlFile);
-                      console.log('Deleted XML file after successful MISA conversion:', xmlFile);
-                    } catch (unlinkErr) {
-                      console.error('Lỗi khi xóa file XML:', unlinkErr);
+                    const targetDir = path.dirname(result.outputPath);
+                    if (!keepXmlFiles) {
+                      try {
+                        fs.unlinkSync(xmlFile);
+                        console.log('Deleted XML file after successful MISA conversion:', xmlFile);
+                      } catch (unlinkErr) {
+                        console.error('Lỗi khi xóa file XML:', unlinkErr);
+                      }
+                    } else {
+                      try {
+                        const targetXmlPath = path.join(targetDir, path.basename(xmlFile));
+                        if (xmlFile !== targetXmlPath && fs.existsSync(xmlFile)) {
+                          fs.renameSync(xmlFile, targetXmlPath);
+                          console.log('Moved XML file to period folder:', targetXmlPath);
+                        } else {
+                          console.log('Giữ nguyên file XML theo cài đặt:', xmlFile);
+                        }
+                      } catch (moveErr) {
+                        console.error('Lỗi khi chuyển file XML vào thư mục kỳ:', moveErr);
+                      }
                     }
                   } else {
                     skippedReasons.push(result.reason || "Không tìm thấy template phù hợp");
@@ -787,6 +814,16 @@ ipcMain.handle('set-folder-organization', (event, enabled) => {
 
 ipcMain.handle('get-folder-organization', () => {
   return organizeFoldersByMst;
+});
+
+ipcMain.handle('set-keep-xml', (event, enabled) => {
+  keepXmlFiles = !!enabled;
+  saveSetting('keepXmlFiles', keepXmlFiles);
+  return { success: true };
+});
+
+ipcMain.handle('get-keep-xml', () => {
+  return keepXmlFiles;
 });
 
 // === Export Accounts to Excel ===
