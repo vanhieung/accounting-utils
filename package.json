@@ -11,12 +11,10 @@
     "start": "electron .",
     "dev": "electron .",
     "dev:watch": "nodemon --watch main.js --watch preload.js --watch invoice_matcher.js --exec electron .",
-    "dist": "electron-builder --win --mac",
-    "publish": "dotenv -- electron-builder --win --mac --publish always",
+    "dist": "electron-builder --win",
+    "publish": "dotenv -- electron-builder --win --publish always",
     "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
     "publish:win": "dotenv -- electron-builder --win --publish always",
-    "publish:mac": "dotenv -- electron-builder --mac --publish always",
     "release": "npm version patch && git push origin main --follow-tags"
   },
   "build": {
@@ -35,22 +33,12 @@
       "target": "nsis",
       "icon": "app_icon.ico"
     },
-    "mac": {
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "app_icon.png"
-    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Tải Hóa Đơn Tự Động"
-    },
-    "dmg": {
-      "title": "Tải Hóa Đơn Tự Động"
     }
   },
   "author": "AccountingApp",

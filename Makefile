@@ -4,16 +4,14 @@
 -include .env
 export
 
-.PHONY: help publish publish-win publish-mac dist dist-win dist-mac release patch minor major
+.PHONY: help publish publish-win dist dist-win release patch minor major
 
 help:
 	@echo "Danh sach cac lenh ho tro:"
-	@echo "  make dist         - Build app (Mac & Win)"
+	@echo "  make dist         - Build app (Windows)"
 	@echo "  make dist-win     - Build app (Windows)"
-	@echo "  make dist-mac     - Build app (macOS)"
-	@echo "  make publish      - Build va publish app len GitHub Releases (Mac & Win)"
+	@echo "  make publish      - Build va publish app len GitHub Releases (Windows)"
 	@echo "  make publish-win  - Build va publish app len GitHub Releases (Windows)"
-	@echo "  make publish-mac  - Build va publish app len GitHub Releases (macOS)"
 	@echo "  make release      - Tu dong commit, tang version (patch) va publish (Local)"
 	@echo "  make patch        - Tang version patch (1.0.x), push va publish (Local)"
 	@echo "  make minor        - Tang version minor (1.x.0), push va publish (Local)"
@@ -28,21 +26,14 @@ dist:
 dist-win:
 	npm run dist:win
 
-dist-mac:
-	npm run dist:mac
-
-# Lệnh chỉ chạy publish (cả 2 nền tảng)
+# Lệnh chỉ chạy publish
 publish:
-	@echo "Dang publish phien ban moi len GitHub (Mac & Win)..."
+	@echo "Dang publish phien ban moi len GitHub (Windows)..."
 	npm run publish
 
 publish-win:
 	@echo "Dang publish phien ban moi len GitHub (Windows)..."
 	npm run publish:win
-
-publish-mac:
-	@echo "Dang publish phien ban moi len GitHub (macOS)..."
-	npm run publish:mac
 
 # Lệnh để tăng version patch, push code và publish
 patch:
