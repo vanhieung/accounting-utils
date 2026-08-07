@@ -593,7 +593,7 @@ function fillTemplate(invoice, templateFile, templateDir) {
  * @param {string} [outputDir] - Directory to write the output Excel file. If omitted, saves in the same directory as the XML file.
  * @returns {object} Result summary
  */
-function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir = null, activeMst = null) {
+function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir = null, activeMst = null, forceTemplate = null) {
     if (!fs.existsSync(xmlPath)) {
         throw new Error(`XML file does not exist: ${xmlPath}`);
     }
@@ -618,8 +618,19 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
     // Set context type so mapper functions can make correct buying/selling decisions
     invoice.type = type;
 
+    let best;
     const rankings = classifyInvoice(invoice, type);
-    const best = rankings[0];
+    
+    if (forceTemplate) {
+        const found = rankings.find(t => t.file === forceTemplate);
+        if (found) {
+            best = { ...found, score: 100 };
+        } else {
+            best = { file: forceTemplate, name: forceTemplate, score: 100 };
+        }
+    } else {
+        best = rankings[0];
+    }
 
     // Set template name so mapper functions can check it
     invoice.template = best ? best.file : null;

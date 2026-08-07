@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const { autoUpdater } = require('electron-updater');
-const { processInvoiceXMLFile } = require('./invoice_matcher');
+const { processInvoiceXMLFile, parseInvoiceXML, classifyInvoice } = require('./invoice_matcher');
 
 // Lazy-loaded heavy modules — only imported on first use to speed up app startup
 let _JSZip = null;
@@ -12,16 +12,7 @@ function getJSZip() {
   return _JSZip;
 }
 
-// Enable hot reload in development mode
-try {
-  if (!app.isPackaged) {
-    require('electron-reloader')(module, {
-      ignore: ['node_modules', 'dist', 'build', '*.xlsx', '*.xml', '.git']
-    });
-  }
-} catch (e) {
-  // Ignored if electron-reloader is missing or in production
-}
+
 
 // Thiết lập tên ứng dụng và thư mục userData nhất quán giữa Dev và Production để duy trì session
 app.name = 'Invoice Batch Downloader';
@@ -33,7 +24,6 @@ fs.mkdirSync(downloadDestination, { recursive: true }); // recursive: true is a 
 
 let activeMst = null;
 let organizeFoldersByMst = false;
-let keepXmlFiles = false;
 
 function getTemplatesDir(type) {
   const subFolder = type === 'selling' ? 'selling' : 'buying';
@@ -114,8 +104,7 @@ function saveSetting(key, value) {
 
 // Load initial settings
 const _initSettings = loadSettings();
-organizeFoldersByMst = !!_initSettings.organizeFoldersByMst;
-keepXmlFiles = !!_initSettings.keepXmlFiles;
+organizeFoldersByMst = _initSettings.organizeFoldersByMst !== undefined ? !!_initSettings.organizeFoldersByMst : true;
 
 const ACCOUNTS_FILE = path.join(app.getPath('userData'), 'accounts.json');
 
@@ -176,6 +165,7 @@ function openBatchDownloadWindow() {
 
   // Chỉ hiện window khi đã render xong HTML/CSS (khắc phục lỗi màn hình trắng)
   batchDownloadWindow.once('ready-to-show', () => {
+    batchDownloadWindow.maximize();
     batchDownloadWindow.show();
   });
 
@@ -212,6 +202,25 @@ function openBatchDownloadWindow() {
 
   if (!customSessionInitialized) {
     customSessionInitialized = true;
+
+    // Ép các session cookies (sẽ bị xóa khi đóng app) thành cookies vĩnh viễn (30 ngày)
+    customSession.cookies.on('changed', (event, cookie, cause, removed) => {
+      if (!removed && cookie.session) {
+        const url = (cookie.secure ? 'https://' : 'http://') + cookie.domain.replace(/^\./, '');
+        const newCookie = {
+          url: url,
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          secure: cookie.secure,
+          httpOnly: cookie.httpOnly,
+          expirationDate: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60) // +30 ngày
+        };
+        customSession.cookies.set(newCookie).catch(err => console.error('Lỗi set persistent cookie:', err));
+      }
+    });
+
     customSession.on('will-download', (event, item, webContents) => {
       // Ghép nối với operation đang chờ tải
       const now = Date.now();
@@ -331,44 +340,35 @@ function openBatchDownloadWindow() {
             xmlFilesToProcess.push(savePath);
           }
 
-          let matchedTemplates = [];
+          let reviewItems = [];
           let skippedReasons = [];
           if (finalStatus === 'success' && xmlFilesToProcess.length > 0) {
             const templateDir = getTemplatesDir(invoiceType);
             for (const xmlFile of xmlFilesToProcess) {
               try {
                 if (fs.existsSync(templateDir)) {
-                  const result = processInvoiceXMLFile(xmlFile, templateDir, invoiceType, null, activeMst);
-                  if (result.success) {
-                    matchedTemplates.push({
-                      template: result.recommendedTemplate,
-                      templateName: result.recommendedTemplateName,
-                      outputName: path.basename(result.outputPath)
-                    });
-                    const targetDir = path.dirname(result.outputPath);
-                    if (!keepXmlFiles) {
-                      try {
-                        fs.unlinkSync(xmlFile);
-                        console.log('Deleted XML file after successful MISA conversion:', xmlFile);
-                      } catch (unlinkErr) {
-                        console.error('Lỗi khi xóa file XML:', unlinkErr);
-                      }
-                    } else {
-                      try {
-                        const targetXmlPath = path.join(targetDir, path.basename(xmlFile));
-                        if (xmlFile !== targetXmlPath && fs.existsSync(xmlFile)) {
-                          fs.renameSync(xmlFile, targetXmlPath);
-                          console.log('Moved XML file to period folder:', targetXmlPath);
-                        } else {
-                          console.log('Giữ nguyên file XML theo cài đặt:', xmlFile);
+                     const invoice = parseInvoiceXML(xmlFile);
+                     if (invoice) {
+                        let actualType = invoiceType;
+                        if (activeMst) {
+                          if (invoice.nban_mst === activeMst) actualType = 'selling';
+                          else if (invoice.nmua_mst === activeMst) actualType = 'buying';
                         }
-                      } catch (moveErr) {
-                        console.error('Lỗi khi chuyển file XML vào thư mục kỳ:', moveErr);
-                      }
-                    }
-                  } else {
-                    skippedReasons.push(result.reason || "Không tìm thấy template phù hợp");
-                  }
+                        const rankings = classifyInvoice(invoice, actualType);
+                        const best = rankings[0] || {};
+                        reviewItems.push({
+                           xmlPath: xmlFile,
+                           invoiceNumber: invoice.so_hdon,
+                           nbanTen: invoice.nban_ten,
+                           nmuaTen: invoice.nmua_ten,
+                           template: best.file,
+                           templateName: best.name,
+                           invoiceType: actualType,
+                           templateDir: templateDir
+                        });
+                     } else {
+                        skippedReasons.push("Không thể parse XML");
+                     }
                 } else {
                   skippedReasons.push("Không tìm thấy thư mục mẫu");
                 }
@@ -386,11 +386,8 @@ function openBatchDownloadWindow() {
               status: finalStatus,
               reason: failReason
             };
-            if (matchedTemplates.length > 0) {
-              payload.misaMatched = true;
-              payload.misaTemplate = matchedTemplates[0].template;
-              payload.misaTemplateName = matchedTemplates[0].templateName;
-              payload.misaOutputName = matchedTemplates[0].outputName;
+            if (reviewItems.length > 0) {
+              payload.reviewItems = reviewItems;
             } else if (skippedReasons.length > 0) {
               payload.misaSkipped = true;
               payload.misaReason = skippedReasons.join(', ');
@@ -614,6 +611,34 @@ ipcMain.handle('open-folder', (event, folderPath) => {
   shell.openPath(target);
 });
 
+ipcMain.handle('get-templates', () => {
+  const buying = classifyInvoice({ items: [] }, 'buying').map(t => ({ file: t.file, name: t.name }));
+  const selling = classifyInvoice({ items: [] }, 'selling').map(t => ({ file: t.file, name: t.name }));
+  return { buying, selling };
+});
+
+ipcMain.handle('export-excel-batch', async (event, items) => {
+  const results = [];
+  for (const item of items) {
+    try {
+      const result = processInvoiceXMLFile(item.xmlPath, item.templateDir, item.invoiceType, null, activeMst, item.template);
+      if (result.success) {
+        results.push({ success: true, invoiceNumber: item.invoiceNumber, outputName: path.basename(result.outputPath) });
+        try {
+          fs.unlinkSync(item.xmlPath);
+        } catch (e) {}
+      } else {
+        results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: result.reason });
+      }
+    } catch(err) {
+      results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: err.message });
+    }
+  }
+  return results;
+});
+
+
+
 // Cache widget icon in memory to avoid re-reading a 414KB PNG on every renderer request
 let cachedWidgetIconBase64 = undefined; // undefined = not yet loaded
 ipcMain.handle('get-widget-icon', async () => {
@@ -806,24 +831,24 @@ ipcMain.handle('set-active-mst', (event, mst) => {
   return { success: true };
 });
 
-ipcMain.handle('set-folder-organization', (event, enabled) => {
-  organizeFoldersByMst = !!enabled;
-  saveSetting('organizeFoldersByMst', organizeFoldersByMst);
+ipcMain.handle('set-organize-folders', (event, enabled) => {
+  organizeFoldersByMst = enabled;
+  saveSetting('organizeFoldersByMst', enabled);
+});
+
+ipcMain.handle('get-organize-folders', () => organizeFoldersByMst);
+
+ipcMain.handle('delete-xml-batch', async (event, items) => {
+  for (const item of items) {
+    try {
+      if (fs.existsSync(item.xmlPath)) {
+        fs.unlinkSync(item.xmlPath);
+      }
+    } catch (e) {
+      console.error('Lỗi xóa XML:', e);
+    }
+  }
   return { success: true };
-});
-
-ipcMain.handle('get-folder-organization', () => {
-  return organizeFoldersByMst;
-});
-
-ipcMain.handle('set-keep-xml', (event, enabled) => {
-  keepXmlFiles = !!enabled;
-  saveSetting('keepXmlFiles', keepXmlFiles);
-  return { success: true };
-});
-
-ipcMain.handle('get-keep-xml', () => {
-  return keepXmlFiles;
 });
 
 // === Export Accounts to Excel ===

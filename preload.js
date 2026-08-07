@@ -18,11 +18,12 @@ const api = {
   deleteAccount: (id) => ipcRenderer.invoke('delete-account', id),
   importExcelAccounts: () => ipcRenderer.invoke('import-excel-accounts'),
   setActiveMst: (mst) => ipcRenderer.invoke('set-active-mst', mst),
-  setFolderOrganization: (enabled) => ipcRenderer.invoke('set-folder-organization', enabled),
-  getFolderOrganization: () => ipcRenderer.invoke('get-folder-organization'),
-  setKeepXml: (enabled) => ipcRenderer.invoke('set-keep-xml', enabled),
-  getKeepXml: () => ipcRenderer.invoke('get-keep-xml'),
+  setFolderOrganization: (enabled) => ipcRenderer.invoke('set-organize-folders', enabled),
+  getFolderOrganization: () => ipcRenderer.invoke('get-organize-folders'),
+  deleteXmlBatch: (items) => ipcRenderer.invoke('delete-xml-batch', items),
   exportAccountsExcel: () => ipcRenderer.invoke('export-accounts-excel'),
+  getTemplates: () => ipcRenderer.invoke('get-templates'),
+  exportExcelBatch: (items) => ipcRenderer.invoke('export-excel-batch', items),
   // Auto-update APIs
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
@@ -58,7 +59,7 @@ function initApp() {
       this.container.id = 'electron-batch-dl-root';
       this.container.style.position = 'fixed';
       this.container.style.bottom = '20px';
-      this.container.style.right = '20px';
+      this.container.style.left = '20px';
       this.container.style.zIndex = '999999';
 
       this.shadow = this.container.attachShadow({ mode: 'closed' });
@@ -71,7 +72,7 @@ function initApp() {
       this.shadow.innerHTML = `
         <style>
           .panel {
-            width: 320px;
+            width: 420px;
             background: linear-gradient(135deg, #ffffff 0%, #f4f6fc 100%);
             border: 1px solid #dcdfe6;
             border-radius: 12px;
@@ -81,7 +82,12 @@ function initApp() {
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            transition: all 0.3s ease;
+            transition: opacity 0.3s ease, box-shadow 0.3s ease;
+            resize: both;
+            min-width: 320px;
+            min-height: 550px;
+            height: 650px;
+            max-height: 95vh;
           }
           .panel.minimized { display: none; }
           .widget-btn {
@@ -130,6 +136,10 @@ function initApp() {
           }
           .body {
             padding: 15px;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
           }
           .folder-section {
             margin-bottom: 12px;
@@ -155,7 +165,8 @@ function initApp() {
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 200px;
+            max-width: 280px;
+            font-size: 12px;
           }
           .account-section {
             margin-bottom: 12px;
@@ -169,11 +180,7 @@ function initApp() {
           }
           .account-select {
             flex: 1;
-            font-size: 11px;
-            border: 1px solid #dcdfe6;
-            border-radius: 4px;
-            padding: 4px;
-            max-width: 140px;
+            min-width: 150px;
           }
           .modal {
             position: absolute; top:0; left:0; width:100%; height:100%;
@@ -184,6 +191,13 @@ function initApp() {
             background: white; padding: 15px; border-radius: 8px; width: 85%;
             box-shadow: 0 4px 12px rgba(0,0,0,0.2); display: flex; flex-direction: column; gap: 8px;
           }
+          #review-modal .modal-content {
+            resize: both;
+            overflow: hidden;
+            height: 70vh;
+            min-height: 300px;
+            max-height: 95vh;
+          }
           .modal-content input {
             padding: 6px; font-size: 12px; border: 1px solid #dcdfe6; border-radius: 4px;
           }
@@ -191,20 +205,111 @@ function initApp() {
             list-style: none; padding: 0; margin: 0; max-height: 100px; overflow-y: auto; font-size: 11px;
           }
           .acc-item {
-            display: flex; justify-content: space-between; padding: 4px; border-bottom: 1px solid #eee; align-items: center;
+            display: flex; justify-content: space-between; padding: 6px; border-bottom: 1px solid #eee; align-items: center;
           }
           .btn-small {
-            font-size: 11px;
+            font-size: 12px;
             background: #0052cc;
             color: white;
             border: none;
-            padding: 3px 8px;
+            padding: 4px 10px;
             border-radius: 4px;
             cursor: pointer;
             transition: background 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
           }
           .btn-small:hover {
             background: #0040a3;
+          }
+          .review-table-container {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            margin: 10px 0;
+            border: 1px solid #dcdfe6;
+            border-radius: 4px;
+          }
+          .review-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+          }
+          .review-table th, .review-table td {
+            border: 1px solid #dcdfe6;
+            padding: 6px;
+            text-align: left;
+          }
+          .review-table th {
+            background: #f4f6fc;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+          }
+          .custom-select {
+            position: relative;
+            flex: 1;
+            min-width: 150px;
+            font-size: 13px;
+          }
+          .custom-select-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #fff;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: #2c3e50;
+            cursor: pointer;
+            transition: all 0.2s ease;
+          }
+          .custom-select-trigger:hover { border-color: #0052cc; }
+          .custom-select.open .custom-select-trigger {
+            border-color: #007aff;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
+          }
+          .custom-options {
+            position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+            background: #fff; border: 1px solid #dcdfe6; border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-height: 200px;
+            overflow-y: auto; z-index: 100; display: none;
+          }
+          .custom-select.open .custom-options { display: block; }
+          .custom-option {
+            padding: 8px 10px; cursor: pointer; transition: background 0.1s;
+          }
+          .custom-option:hover { background: #f4f6fc; }
+          .custom-option.selected { background: #eef2fe; color: #0052cc; font-weight: 600; }
+          .review-table select {
+            width: 100%;
+          }
+          .review-table select {
+            font-size: 13px !important;
+            color: #2c3e50 !important;
+            background-color: #fff !important;
+            border: 1px solid #dcdfe6 !important;
+            border-radius: 6px !important;
+            padding: 6px 30px 6px 10px !important;
+            -webkit-appearance: none !important;
+            -moz-appearance: none !important;
+            appearance: none !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6a85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+            background-repeat: no-repeat !important;
+            background-position: right 8px center !important;
+            background-size: 14px !important;
+          }
+          .review-table select:hover {
+            border-color: #0052cc;
+          }
+          .review-table select:focus {
+            outline: none;
+            border-color: #007aff;
+            box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.15);
           }
           .stats-grid {
             display: grid;
@@ -221,13 +326,13 @@ function initApp() {
           }
           .stat-label {
             color: #909399;
-            font-size: 10px;
+            font-size: 11px;
             text-transform: uppercase;
             margin-bottom: 2px;
           }
           .stat-value {
             font-weight: bold;
-            font-size: 13px;
+            font-size: 14px;
           }
           .actions {
             display: flex;
@@ -236,13 +341,17 @@ function initApp() {
           }
           button.btn-action {
             flex: 1;
-            padding: 10px 8px;
-            font-size: 12px;
+            padding: 12px 10px;
+            font-size: 13px;
             font-weight: 600;
             border: none;
             border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
           }
           .btn-start {
             background: #28c76f;
@@ -271,13 +380,14 @@ function initApp() {
             opacity: 0.6;
           }
           .log-panel {
-            height: 110px;
+            flex: 1;
+            min-height: 0;
             overflow-y: auto;
             background: #1e1e1e;
             color: #39ff14;
             font-family: "Courier New", Courier, monospace;
-            font-size: 11px;
-            padding: 8px;
+            font-size: 12px;
+            padding: 10px;
             border-radius: 6px;
             box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
           }
@@ -578,23 +688,24 @@ function initApp() {
           <div class="body">
             <div class="folder-title">Tài khoản & Thư mục</div>
             <div class="account-section">
-              <select id="account-select" class="account-select">
-                <option value="">-- Chọn tài khoản --</option>
-              </select>
-              <button class="btn-small" id="btn-fill-account" title="Điền vào form">Điền form</button>
-              <button class="btn-small" id="btn-manage-accounts" title="Quản lý">⚙️</button>
+              <div class="custom-select" id="account-select-wrapper">
+                <div class="custom-select-trigger" id="account-select-trigger">
+                  <span id="account-select-label" style="text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">-- Chọn tài khoản --</span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5a6a85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0; margin-left: 5px;"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="custom-options" id="account-select-options"></div>
+              </div>
+              <input type="hidden" id="account-select" value="">
+              <button class="btn-small" id="btn-fill-account" title="Điền vào form"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg> Điền form</button>
+              <button class="btn-small" id="btn-manage-accounts" title="Quản lý"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg> Quản lý</button>
             </div>
             <div class="folder-section">
               <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
-              <button class="btn-small" id="btn-change-folder">Đổi</button>
+              <button class="btn-small" id="btn-change-folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg> Đổi</button>
             </div>
             <div class="organize-section" style="margin-bottom: 8px;">
               <input type="checkbox" id="chk-organize-mst" />
               <label for="chk-organize-mst">📁 Tạo thư mục riêng theo MST</label>
-            </div>
-            <div class="organize-section" style="margin-bottom: 8px;">
-              <input type="checkbox" id="chk-keep-xml" />
-              <label for="chk-keep-xml">📄 Giữ nguyên file XML (không xóa)</label>
             </div>
             <div class="organize-section" style="background: #fffcf0; border-color: #ffd89b;">
               <span style="font-weight: 600; font-size: 11px;">Loại Hóa Đơn:</span>
@@ -628,9 +739,9 @@ function initApp() {
             </div>
 
             <div class="actions">
-              <button class="btn-action btn-start" id="btn-start" title="Phím tắt: Ctrl+Shift+S">Tải toàn bộ</button>
-              <button class="btn-action btn-skip" id="btn-skip" disabled title="Phím tắt: Ctrl+Shift+N">Bỏ qua dòng</button>
-              <button class="btn-action btn-stop" id="btn-stop" disabled title="Phím tắt: Ctrl+Shift+X">Dừng</button>
+              <button class="btn-action btn-start" id="btn-start" title="Phím tắt: Ctrl+Shift+S"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> Tải toàn bộ</button>
+              <button class="btn-action btn-skip" id="btn-skip" disabled title="Phím tắt: Ctrl+Shift+N"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg> Bỏ qua</button>
+              <button class="btn-action btn-stop" id="btn-stop" disabled title="Phím tắt: Ctrl+Shift+X"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg> Dừng</button>
             </div>
 
             <div class="log-panel" id="log-container">
@@ -646,15 +757,38 @@ function initApp() {
             <input type="password" id="acc-pwd" placeholder="Mật khẩu" />
             <input type="text" id="acc-name" placeholder="Tên công ty (tùy chọn)" />
             <div style="display: flex; gap: 5px;">
-              <button class="btn-small" id="btn-save-acc" style="flex: 1; background: #28c76f;">Lưu / Thêm</button>
+              <button class="btn-small" id="btn-save-acc" style="flex: 1; background: #28c76f;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> Lưu / Thêm</button>
               <button class="btn-small" id="btn-close-acc" style="flex: 1; background: #6c757d;">Đóng</button>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
               <div style="font-weight: bold; font-size: 11px;">Danh sách đã lưu:</div>
-              <button class="btn-small" id="btn-import-excel" style="background: #0052cc;">Nhập từ Excel</button>
-              <button class="btn-small" id="btn-export-excel" style="background: #28c76f;">Xuất ra Excel</button>
+              <button class="btn-small" id="btn-import-excel" style="background: #0052cc;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2-2.4-3.5-4.4-3.5h-1.2c-.7-3-3.2-5.2-6.2-5.6-3-.3-5.9 1.3-7.3 4-1.2 2.5-1 6.5.5 8.8m8.7-1.6V21"></path><path d="M16 16l-4-4-4 4"></path></svg> Nhập Excel</button>
+              <button class="btn-small" id="btn-export-excel" style="background: #28c76f;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 13h2"></path><path d="M8 17h2"></path><path d="M14 13h2"></path><path d="M14 17h2"></path></svg> Xuất Excel</button>
             </div>
             <ul id="acc-list" class="acc-list"></ul>
+          </div>
+        </div>
+        <div id="review-modal" class="modal">
+          <div class="modal-content" style="width: 90%; max-width: 800px;">
+            <div style="font-weight: bold; margin-bottom: 5px; font-size: 14px;">Xác nhận mẫu Excel</div>
+            <div style="font-size: 12px; color: #5a6a85;">Vui lòng chọn mẫu phù hợp cho các hóa đơn vừa tải về. Các hóa đơn có cùng mẫu sẽ được gộp chung vào 1 file Excel.</div>
+            <div class="review-table-container">
+              <table class="review-table" id="review-table">
+                <thead>
+                  <tr>
+                    <th style="width: 50px;">STT</th>
+                    <th style="width: 120px;">Số HĐ</th>
+                    <th>Đối tác</th>
+                    <th style="width: 250px;">Mẫu Excel</th>
+                  </tr>
+                </thead>
+                <tbody id="review-tbody"></tbody>
+              </table>
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px;">
+              <button class="btn-small" id="btn-cancel-review" style="background: #6c757d; padding: 6px 15px; font-size: 12px;">Đóng</button>
+              <button class="btn-small" id="btn-export-review" style="background: #28c76f; padding: 6px 15px; font-size: 12px; font-weight: bold;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M8 13h2"></path><path d="M8 17h2"></path><path d="M14 13h2"></path><path d="M14 17h2"></path></svg> Xuất Excel</button>
+            </div>
           </div>
         </div>
       `;
@@ -729,6 +863,35 @@ function initApp() {
 
       // Account Management Logic
       this.accountSelect = this.shadow.getElementById('account-select');
+      const wrapper = this.shadow.getElementById('account-select-wrapper');
+      const trigger = this.shadow.getElementById('account-select-trigger');
+      const label = this.shadow.getElementById('account-select-label');
+      const optionsContainer = this.shadow.getElementById('account-select-options');
+
+      trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wrapper.classList.toggle('open');
+      });
+
+      optionsContainer.addEventListener('click', (e) => {
+        const option = e.target.closest('.custom-option');
+        if (option) {
+          const value = option.dataset.value;
+          const text = option.textContent;
+          this.accountSelect.value = value;
+          label.textContent = text;
+          
+          wrapper.querySelectorAll('.custom-option').forEach(opt => opt.classList.remove('selected'));
+          option.classList.add('selected');
+          wrapper.classList.remove('open');
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!e.composedPath().includes(wrapper)) {
+          wrapper.classList.remove('open');
+        }
+      });
       this.btnFillAccount = this.shadow.getElementById('btn-fill-account');
       this.btnManageAccounts = this.shadow.getElementById('btn-manage-accounts');
       this.accountModal = this.shadow.getElementById('account-modal');
@@ -862,16 +1025,6 @@ function initApp() {
         this.log(this.chkOrganizeMst.checked ? '📁 Bật tạo thư mục theo MST' : '📁 Tắt tạo thư mục theo MST');
       });
 
-      // Keep XML checkbox (persisted)
-      this.chkKeepXml = this.shadow.getElementById('chk-keep-xml');
-      window.electronAPI.getKeepXml().then(val => {
-        this.chkKeepXml.checked = !!val;
-      });
-      this.chkKeepXml.addEventListener('change', () => {
-        window.electronAPI.setKeepXml(this.chkKeepXml.checked);
-        this.log(this.chkKeepXml.checked ? '📄 Bật giữ nguyên file XML' : '📄 Tắt giữ nguyên file XML (tự động xóa sau chuyển đổi)');
-      });
-
       // Keyboard shortcuts
       document.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.shiftKey) {
@@ -907,15 +1060,27 @@ function initApp() {
 
     async loadAccounts() {
       this.accounts = await window.electronAPI.getAccounts();
-      this.accountSelect.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
-      const frag = document.createDocumentFragment();
+      const optionsContainer = this.shadow.getElementById('account-select-options');
+      const label = this.shadow.getElementById('account-select-label');
+      
+      optionsContainer.innerHTML = '<div class="custom-option selected" data-value="">-- Chọn tài khoản --</div>';
+      
       this.accounts.forEach(acc => {
-        const opt = document.createElement('option');
-        opt.value = acc.id;
-        opt.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
-        frag.appendChild(opt);
+        const div = document.createElement('div');
+        div.className = 'custom-option';
+        div.dataset.value = acc.id;
+        div.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
+        optionsContainer.appendChild(div);
       });
-      this.accountSelect.appendChild(frag);
+      
+      // Update label if current value is gone
+      const currentVal = this.accountSelect.value;
+      const stillExists = this.accounts.find(a => a.id === currentVal);
+      if (!stillExists) {
+        this.accountSelect.value = '';
+        label.textContent = '-- Chọn tài khoản --';
+      }
+
       if (this.accountModal.style.display === 'flex') {
         this.renderAccountList();
       }
@@ -1191,6 +1356,7 @@ function initApp() {
       this.currentPage = 1;
       this.successCount = 0;
       this.failureCount = 0;
+      this.pendingReviews = [];
 
       // Cấu hình selectors & timings đồng bộ với Chrome extension
       this.selectors = {
@@ -1284,21 +1450,27 @@ function initApp() {
           this.setState('COMPLETED');
           this.ui.log('Hoàn tất tải toàn bộ hóa đơn!');
 
-          // Show toast to open the download folder
-          const folder = await window.electronAPI.getDownloadFolder();
-          this.ui.showToast(
-            `Đã tải xong ${this.successCount} hóa đơn thành công!`,
-            {
-              actionLabel: '📂 Mở thư mục',
-              onAction: () => window.electronAPI.openFolder(folder),
-              autoDismissMs: 15000
-            }
-          );
+          if (this.pendingReviews.length > 0) {
+            this.showReviewModal();
+          } else {
+            const folder = await window.electronAPI.getDownloadFolder();
+            this.ui.showToast(
+              `Đã tải xong ${this.successCount} hóa đơn thành công!`,
+              {
+                actionLabel: '📂 Mở thư mục',
+                onAction: () => window.electronAPI.openFolder(folder),
+                autoDismissMs: 15000
+              }
+            );
+          }
         }
       } catch (e) {
         if (e.name === 'AbortError') {
           this.setState('STOPPED');
           this.ui.log('Đã dừng bởi người dùng.');
+          if (this.pendingReviews.length > 0) {
+            this.showReviewModal();
+          }
         } else {
           this.setState('FAILED');
           this.ui.log(`Lỗi: ${e.message}`);
@@ -1365,7 +1537,10 @@ function initApp() {
         try {
           const dlResult = await this.downloadRow(currentRow, i, signal, this.skipController.signal);
           this.successCount++;
-          if (dlResult && dlResult.misaMatched) {
+          if (dlResult && dlResult.reviewItems) {
+            this.pendingReviews.push(...dlResult.reviewItems);
+            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công. Đợi xác nhận mẫu...`);
+          } else if (dlResult && dlResult.misaMatched) {
             this.ui.log(`✓ Dòng ${i + 1}: Tải thành công. Đã tạo file Excel MISA: ${dlResult.misaOutputName}`);
           } else if (dlResult && dlResult.misaSkipped) {
             this.ui.log(`✓ Dòng ${i + 1}: Tải thành công (Không tạo MISA: ${dlResult.misaReason}).`);
@@ -1498,6 +1673,84 @@ function initApp() {
           reject(new DOMException('Người dùng bấm Bỏ qua', 'AbortError'));
         });
       });
+    }
+
+    async showReviewModal() {
+      const modal = this.ui.shadow.getElementById('review-modal');
+      const tbody = this.ui.shadow.getElementById('review-tbody');
+      const btnCancel = this.ui.shadow.getElementById('btn-cancel-review');
+      const btnExport = this.ui.shadow.getElementById('btn-export-review');
+      
+      tbody.innerHTML = '';
+      const templates = await window.electronAPI.getTemplates();
+      
+      this.pendingReviews.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        const isSelling = item.invoiceType === 'selling';
+        const templateList = isSelling ? templates.selling : templates.buying;
+        
+        const optionsHtml = templateList.map(t => 
+          `<option value="${t.file}" ${t.file === item.template ? 'selected' : ''}>${t.name}</option>`
+        ).join('');
+
+        tr.innerHTML = `
+          <td>${index + 1}</td>
+          <td>${item.invoiceNumber || 'N/A'}</td>
+          <td style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px;" title="${isSelling ? item.nmuaTen : item.nbanTen}">
+            ${isSelling ? item.nmuaTen : item.nbanTen}
+          </td>
+          <td>
+            <select data-index="${index}">
+              ${optionsHtml}
+            </select>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+      
+      modal.style.display = 'flex';
+      
+      btnCancel.onclick = () => {
+        if (this.pendingReviews.length > 0) {
+          window.electronAPI.deleteXmlBatch(this.pendingReviews);
+        }
+        modal.style.display = 'none';
+        this.pendingReviews = [];
+      };
+      
+      btnExport.onclick = async () => {
+        btnExport.disabled = true;
+        btnExport.textContent = 'Đang xuất...';
+        
+        // Cập nhật mẫu đã chọn
+        const selects = tbody.querySelectorAll('select');
+        selects.forEach(select => {
+          const idx = parseInt(select.getAttribute('data-index'));
+          this.pendingReviews[idx].template = select.value;
+        });
+        
+        try {
+          const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
+          const successCount = results.filter(r => r.success).length;
+          modal.style.display = 'none';
+          this.pendingReviews = [];
+          
+          const folder = await window.electronAPI.getDownloadFolder();
+          this.ui.showToast(
+            `Đã xuất Excel xong: ${successCount}/${results.length} thành công!`,
+            {
+              actionLabel: '📂 Mở thư mục',
+              onAction: () => window.electronAPI.openFolder(folder),
+              autoDismissMs: 15000
+            }
+          );
+        } catch (e) {
+          this.ui.showToast(`Lỗi xuất Excel: ${e.message}`);
+        } finally {
+          btnExport.disabled = false;
+          btnExport.textContent = 'Xuất Excel';
+        }
+      };
     }
 
     async goToNextPage(signal) {
