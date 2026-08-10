@@ -1536,6 +1536,7 @@ function initApp() {
 
         try {
           const dlResult = await this.downloadRow(currentRow, i, signal, this.skipController.signal);
+          
           this.successCount++;
           if (dlResult && dlResult.reviewItems) {
             this.pendingReviews.push(...dlResult.reviewItems);

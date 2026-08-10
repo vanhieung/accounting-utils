@@ -4,10 +4,12 @@
 -include .env
 export
 
-.PHONY: help publish publish-win dist dist-win release patch minor major
+.PHONY: help dev start publish publish-win dist dist-win release patch minor major
 
 help:
 	@echo "Danh sach cac lenh ho tro:"
+	@echo "  make dev          - Chay app che do development (npm run dev)"
+	@echo "  make start        - Chay app che do production/start (npm start)"
 	@echo "  make dist         - Build app (Windows)"
 	@echo "  make dist-win     - Build app (Windows)"
 	@echo "  make publish      - Build va publish app len GitHub Releases (Windows)"
@@ -19,6 +21,12 @@ help:
 	@echo "  make ci-patch     - Tang version patch va trigger GitHub Actions (Khong build local)"
 	@echo "  make ci-minor     - Tang version minor va trigger GitHub Actions (Khong build local)"
 	@echo "  make ci-major     - Tang version major va trigger GitHub Actions (Khong build local)"
+
+dev:
+	npm run dev
+
+start:
+	npm start
 
 dist:
 	npm run dist

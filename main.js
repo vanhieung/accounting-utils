@@ -836,6 +836,8 @@ ipcMain.handle('set-organize-folders', (event, enabled) => {
   saveSetting('organizeFoldersByMst', enabled);
 });
 
+
+
 ipcMain.handle('get-organize-folders', () => organizeFoldersByMst);
 
 ipcMain.handle('delete-xml-batch', async (event, items) => {
