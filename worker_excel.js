@@ -24,12 +24,14 @@ for (const item of items) {
         outputName: path.basename(result.outputPath),
         outputPath: result.outputPath
       });
-      try {
-        fs.unlinkSync(item.xmlPath);
-      } catch (e) {}
     } else {
       results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: result.reason });
     }
+    
+    // Luôn luôn dọn dẹp file XML sau khi xử lý xong (kể cả thành công hay thất bại) theo yêu cầu
+    try {
+      fs.unlinkSync(item.xmlPath);
+    } catch (e) {}
   } catch(err) {
     results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: err.message });
   }

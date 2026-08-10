@@ -1971,18 +1971,17 @@ function initApp() {
         });
 
         try {
-          // Cập nhật trạng thái tiến độ chi tiết
-            const statusEl = this.shadow.getElementById('review-status');
-            statusEl.innerHTML = '<span style="color:#b06000;">Đang xử lý xuất Excel (Worker)... 0%</span>';
-            
-            // Lắng nghe progress từ Worker
-            const removeListener = window.electronAPI.onExportProgress((progress) => {
-              const percent = Math.round((progress.completed / progress.total) * 100);
-              statusEl.innerHTML = `<span style="color:#0052cc;">Đang xuất: ${progress.completed} / ${progress.total} (${percent}%)</span>`;
-            });
+          // Cập nhật trạng thái tiến độ chi tiết trên nút
+          btnExport.textContent = 'Đang xử lý xuất Excel (Worker)... 0%';
+          
+          // Lắng nghe progress từ Worker
+          const removeListener = window.electronAPI.onExportProgress((progress) => {
+            const percent = Math.round((progress.completed / progress.total) * 100);
+            btnExport.textContent = `Đang xuất: ${progress.completed} / ${progress.total} (${percent}%)`;
+          });
 
-            const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
-            removeListener();
+          const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
+          removeListener();
           const successResults = results.filter(r => r.success);
           const successCount = successResults.length;
           modal.style.display = 'none';
