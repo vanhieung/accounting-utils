@@ -25,6 +25,13 @@ const api = {
   exportAccountsExcel: () => ipcRenderer.invoke('export-accounts-excel'),
   getTemplates: () => ipcRenderer.invoke('get-templates'),
   exportExcelBatch: (items) => ipcRenderer.invoke('export-excel-batch', items),
+  onExportProgress: (callback) => {
+    const listener = (event, arg) => callback(arg);
+    ipcRenderer.on('export-excel-progress', listener);
+    return () => {
+      ipcRenderer.removeListener('export-excel-progress', listener);
+    };
+  },
   // Auto-update APIs
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
@@ -83,25 +90,30 @@ function initApp() {
 
     render(initialFolder) {
       this.shadow.innerHTML = `
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      </style>
         <style>
           .panel {
-            width: 440px;
-            background: linear-gradient(135deg, #ffffff 0%, #f4f6fc 100%);
-            border: 1px solid #dcdfe6;
-            border-radius: 12px;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #2c3e50;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            transition: opacity 0.3s ease, box-shadow 0.3s ease;
-            resize: both;
-            min-width: 340px;
-            min-height: 580px;
-            height: 680px;
-            max-height: 95vh;
-          }
+    width: 440px;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 16px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255,255,255,0.5);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+    resize: both;
+    min-width: 340px;
+    min-height: 580px;
+    height: 680px;
+    max-height: 95vh;
+  }
           .panel.minimized { display: none; }
           .widget-btn {
             position: relative;
@@ -153,17 +165,19 @@ function initApp() {
             background: rgba(255,255,255,0.2);
           }
           .header {
-            background: linear-gradient(90deg, #0052cc 0%, #007aff 100%);
-            color: white;
-            padding: 12px 15px;
-            font-weight: 600;
-            font-size: 14px;
-            cursor: move;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            user-select: none;
-          }
+    background: rgba(255, 255, 255, 0.4);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+    color: #0f172a;
+    padding: 16px 20px;
+    font-weight: 600;
+    font-size: 15px;
+    cursor: move;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+  }
           .body {
             padding: 14px;
             display: flex;
@@ -259,12 +273,25 @@ function initApp() {
             margin-top: 6px;
           }
           .progress-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #0052cc, #007aff);
-            border-radius: 4px;
-            width: 0%;
-            transition: width 0.3s ease;
-          }
+    height: 100%;
+    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    border-radius: 4px;
+    width: 0%;
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-bar-fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0; width: 50%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+  @keyframes shimmer {
+    0% { transform: translateX(-200%); }
+    100% { transform: translateX(200%); }
+  }
           .modal {
             position: absolute; top:0; left:0; width:100%; height:100%;
             background: rgba(0,0,0,0.5); z-index: 10;
@@ -1944,7 +1971,18 @@ function initApp() {
         });
 
         try {
-          const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
+          // Cập nhật trạng thái tiến độ chi tiết
+            const statusEl = this.shadow.getElementById('review-status');
+            statusEl.innerHTML = '<span style="color:#b06000;">Đang xử lý xuất Excel (Worker)... 0%</span>';
+            
+            // Lắng nghe progress từ Worker
+            const removeListener = window.electronAPI.onExportProgress((progress) => {
+              const percent = Math.round((progress.completed / progress.total) * 100);
+              statusEl.innerHTML = `<span style="color:#0052cc;">Đang xuất: ${progress.completed} / ${progress.total} (${percent}%)</span>`;
+            });
+
+            const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
+            removeListener();
           const successResults = results.filter(r => r.success);
           const successCount = successResults.length;
           modal.style.display = 'none';

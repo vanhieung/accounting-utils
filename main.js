@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const { autoUpdater } = require('electron-updater');
+const { Worker } = require('worker_threads');
 const { processInvoiceXMLFile, parseInvoiceXML, classifyInvoice } = require('./invoice_matcher');
 
 // Lazy-loaded heavy modules — only imported on first use to speed up app startup
@@ -637,28 +638,25 @@ ipcMain.handle('get-templates', () => {
 });
 
 ipcMain.handle('export-excel-batch', async (event, items) => {
-  const results = [];
-  for (const item of items) {
-    try {
-      const result = processInvoiceXMLFile(item.xmlPath, item.templateDir, item.invoiceType, null, activeMst, item.template);
-      if (result.success) {
-        results.push({ 
-          success: true, 
-          invoiceNumber: item.invoiceNumber, 
-          outputName: path.basename(result.outputPath),
-          outputPath: result.outputPath
-        });
-        try {
-          fs.unlinkSync(item.xmlPath);
-        } catch (e) {}
-      } else {
-        results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: result.reason });
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'worker_excel.js'), {
+      workerData: { items, activeMst }
+    });
+    
+    worker.on('message', (msg) => {
+      if (msg.type === 'progress') {
+        // Report progress to the frontend if needed
+        event.sender.send('export-excel-progress', msg.data);
+      } else if (msg.type === 'done') {
+        resolve(msg.data);
       }
-    } catch(err) {
-      results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: err.message });
-    }
-  }
-  return results;
+    });
+    
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
 });
 
 
