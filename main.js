@@ -356,16 +356,27 @@ function openBatchDownloadWindow() {
                         }
                         const rankings = classifyInvoice(invoice, actualType);
                         const best = rankings[0] || {};
-                        reviewItems.push({
-                           xmlPath: xmlFile,
-                           invoiceNumber: invoice.so_hdon,
-                           nbanTen: invoice.nban_ten,
-                           nmuaTen: invoice.nmua_ten,
-                           template: best.file,
-                           templateName: best.name,
-                           invoiceType: actualType,
-                           templateDir: templateDir
-                        });
+                         reviewItems.push({
+                            xmlPath: xmlFile,
+                            invoiceNumber: invoice.so_hdon,
+                            nbanTen: invoice.nban_ten,
+                            nbanMst: invoice.nban_mst,
+                            nbanDchi: invoice.nban_dchi,
+                            nmuaTen: invoice.nmua_ten,
+                            nmuaMst: invoice.nmua_mst,
+                            nmuaDchi: invoice.nmua_dchi,
+                            ngayLap: invoice.ngay_lap,
+                            tongChuaThue: invoice.tong_chua_thue || 0,
+                            tongThue: invoice.tong_thue || 0,
+                            tongThanhToan: invoice.tong_thanh_toan || 0,
+                            items: invoice.items || [],
+                            template: best.file,
+                            templateName: best.name,
+                            score: best.score !== undefined ? best.score : 80,
+                            reasons: best.reasons || [],
+                            invoiceType: actualType,
+                            templateDir: templateDir
+                         });
                      } else {
                         skippedReasons.push("Không thể parse XML");
                      }
@@ -611,6 +622,14 @@ ipcMain.handle('open-folder', (event, folderPath) => {
   shell.openPath(target);
 });
 
+ipcMain.handle('open-file', (event, filePath) => {
+  if (filePath && fs.existsSync(filePath)) {
+    shell.openPath(filePath);
+    return { success: true };
+  }
+  return { success: false, reason: 'File không tồn tại' };
+});
+
 ipcMain.handle('get-templates', () => {
   const buying = classifyInvoice({ items: [] }, 'buying').map(t => ({ file: t.file, name: t.name }));
   const selling = classifyInvoice({ items: [] }, 'selling').map(t => ({ file: t.file, name: t.name }));
@@ -623,7 +642,12 @@ ipcMain.handle('export-excel-batch', async (event, items) => {
     try {
       const result = processInvoiceXMLFile(item.xmlPath, item.templateDir, item.invoiceType, null, activeMst, item.template);
       if (result.success) {
-        results.push({ success: true, invoiceNumber: item.invoiceNumber, outputName: path.basename(result.outputPath) });
+        results.push({ 
+          success: true, 
+          invoiceNumber: item.invoiceNumber, 
+          outputName: path.basename(result.outputPath),
+          outputPath: result.outputPath
+        });
         try {
           fs.unlinkSync(item.xmlPath);
         } catch (e) {}
