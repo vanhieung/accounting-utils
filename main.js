@@ -170,6 +170,24 @@ function openBatchDownloadWindow() {
     batchDownloadWindow.show();
   });
 
+  // Ngăn chặn đóng app vô tình khi đang có batch download chạy
+  batchDownloadWindow.on('close', (e) => {
+    if (pendingOperations.length > 0) {
+      const choice = dialog.showMessageBoxSync(batchDownloadWindow, {
+        type: 'warning',
+        buttons: ['Đóng ứng dụng', 'Tiếp tục tải'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Đang tải hóa đơn',
+        message: 'Quy trình tải hóa đơn đang chạy. Đóng ứng dụng sẽ hủy toàn bộ tiến trình.',
+        detail: `Hiện có ${pendingOperations.length} thao tác đang chờ xử lý.`
+      });
+      if (choice === 1) {
+        e.preventDefault();
+      }
+    }
+  });
+
   // Xử lý khi load trang bị lỗi (mất mạng, timeout, server sập...)
   batchDownloadWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
     console.error('Lỗi tải trang:', errorDescription);
@@ -204,23 +222,8 @@ function openBatchDownloadWindow() {
   if (!customSessionInitialized) {
     customSessionInitialized = true;
 
-    // Ép các session cookies (sẽ bị xóa khi đóng app) thành cookies vĩnh viễn (30 ngày)
-    customSession.cookies.on('changed', (event, cookie, cause, removed) => {
-      if (!removed && cookie.session) {
-        const url = (cookie.secure ? 'https://' : 'http://') + cookie.domain.replace(/^\./, '');
-        const newCookie = {
-          url: url,
-          name: cookie.name,
-          value: cookie.value,
-          domain: cookie.domain,
-          path: cookie.path,
-          secure: cookie.secure,
-          httpOnly: cookie.httpOnly,
-          expirationDate: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60) // +30 ngày
-        };
-        customSession.cookies.set(newCookie).catch(err => console.error('Lỗi set persistent cookie:', err));
-      }
-    });
+    // Cookie persistence đã được xử lý trong app.whenReady() với debouncing tối ưu hơn.
+    // Chỉ giữ lại will-download handler ở đây.
 
     customSession.on('will-download', (event, item, webContents) => {
       // Ghép nối với operation đang chờ tải

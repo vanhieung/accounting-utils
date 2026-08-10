@@ -1345,6 +1345,11 @@ function initApp() {
         </div>
       `;
 
+      // Giới hạn tối đa 3 toast hiển thị cùng lúc để tránh che kín màn hình
+      while (toastContainer.children.length >= 3) {
+        toastContainer.firstElementChild.remove();
+      }
+
       toastContainer.appendChild(toast);
 
       const dismiss = () => {
@@ -1468,7 +1473,7 @@ function initApp() {
 
       this.behavior = {
         selectionDelayMs: 100,
-        downloadTimeoutMs: 5000
+        downloadTimeoutMs: 15000
       };
 
       window.electronAPI.getDownloadFolder().then(folder => {
