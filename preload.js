@@ -46,8 +46,9 @@ const api = {
   }
 };
 
-// Expose API cho trình duyệt nội bộ
+// Expose API cho web page (main world) qua contextBridge
 contextBridge.exposeInMainWorld('electronAPI', api);
+// Cũng gán lên window của preload (isolated world) để code OverlayUI/InvoiceRunner trong file này truy cập được
 window.electronAPI = api;
 
 function formatCurrency(val) {
@@ -1020,10 +1021,10 @@ function initApp() {
             this.showToast(`Nhập thành công ${res.count} tài khoản!`);
             this.loadAccounts();
           } else if (res.reason !== 'canceled') {
-            this.showToast(`Lỗi: ${res.reason}`);
+            this.showToast(`Lỗi: ${res.reason}`, { type: 'error' });
           }
         } catch (e) {
-          this.showToast(`Lỗi: ${e.message}`);
+          this.showToast(`Lỗi: ${e.message}`, { type: 'error' });
         } finally {
           this.btnImportExcel.textContent = 'Nhập Excel';
           this.btnImportExcel.disabled = false;
@@ -1044,10 +1045,10 @@ function initApp() {
               }]
             });
           } else if (res.reason !== 'canceled') {
-            this.showToast(`Lỗi: ${res.reason}`);
+            this.showToast(`Lỗi: ${res.reason}`, { type: 'error' });
           }
         } catch (e) {
-          this.showToast(`Lỗi: ${e.message}`);
+          this.showToast(`Lỗi: ${e.message}`, { type: 'error' });
         } finally {
           this.btnExportExcel.textContent = 'Xuất Excel';
           this.btnExportExcel.disabled = false;
@@ -1060,7 +1061,7 @@ function initApp() {
         const name = this.shadow.getElementById('acc-name').value.trim();
 
         if (!mst || !pwd) {
-          this.showToast('Vui lòng nhập MST và Mật khẩu');
+          this.showToast('Vui lòng nhập MST và Mật khẩu', { type: 'warning' });
           return;
         }
 
@@ -1075,7 +1076,7 @@ function initApp() {
       this.btnFillAccount.addEventListener('click', () => {
         const selectedId = this.accountSelect.value;
         if (!selectedId) {
-          this.showToast('Vui lòng chọn tài khoản');
+          this.showToast('Vui lòng chọn tài khoản', { type: 'warning' });
           return;
         }
         const acc = this.accounts.find(a => a.id === selectedId);
@@ -1106,9 +1107,9 @@ function initApp() {
             }
           }
           if (mstFilled || pwdFilled) {
-            this.showToast('Đã điền thông tin đăng nhập');
+            this.showToast('Đã điền thông tin đăng nhập', { type: 'info' });
           } else {
-            this.showToast('Không tìm thấy ô đăng nhập trên trang này');
+            this.showToast('Không tìm thấy ô đăng nhập trên trang này', { type: 'warning' });
           }
         }
       });
@@ -1322,7 +1323,7 @@ function initApp() {
       this.logContainer.scrollTop = this.logContainer.scrollHeight;
     }
 
-    showToast(message, { actions = [], autoDismissMs = 12000 } = {}) {
+    showToast(message, { actions = [], autoDismissMs = 12000, type = 'success' } = {}) {
       let toastContainer = this.shadow.querySelector('.toast-container');
       if (!toastContainer) {
         toastContainer = document.createElement('div');
@@ -1333,12 +1334,22 @@ function initApp() {
       const toast = document.createElement('div');
       toast.className = 'toast';
 
+      // Phân biệt icon & màu viền theo loại thông báo
+      const typeConfig = {
+        success: { icon: '✅', borderColor: '#28c76f' },
+        error:   { icon: '❌', borderColor: '#ea5455' },
+        warning: { icon: '⚠️', borderColor: '#ff9f43' },
+        info:    { icon: 'ℹ️', borderColor: '#007aff' }
+      };
+      const config = typeConfig[type] || typeConfig.success;
+      toast.style.borderLeftColor = config.borderColor;
+
       const actionsHtml = actions.map((act, i) =>
         `<button class="toast-btn ${act.primary !== false ? 'toast-btn-primary' : 'toast-btn-dismiss'}" id="toast-act-${i}">${act.label}</button>`
       ).join('') + `<button class="toast-btn toast-btn-dismiss" id="toast-dismiss">Đóng</button>`;
 
       toast.innerHTML = `
-        <span class="toast-icon">✅</span>
+        <span class="toast-icon">${config.icon}</span>
         <div class="toast-body">
           <div class="toast-msg" style="white-space: pre-line;">${message}</div>
           <div class="toast-actions">${actionsHtml}</div>
@@ -1800,17 +1811,23 @@ function initApp() {
           clearTimeout(timeoutId);
           if (errorObserver) { errorObserver.disconnect(); errorObserver = null; }
           unsubscribe();
+          // Cleanup abort listeners to prevent memory leak across many downloadRow() calls
+          signal.removeEventListener('abort', onSignalAbort);
+          skipSignal.removeEventListener('abort', onSkipAbort);
         };
 
-        signal.addEventListener('abort', () => {
+        const onSignalAbort = () => {
           cleanup();
           reject(new DOMException('Aborted', 'AbortError'));
-        });
+        };
 
-        skipSignal.addEventListener('abort', () => {
+        const onSkipAbort = () => {
           cleanup();
           reject(new DOMException('Người dùng bấm Bỏ qua', 'AbortError'));
-        });
+        };
+
+        signal.addEventListener('abort', onSignalAbort, { once: true });
+        skipSignal.addEventListener('abort', onSkipAbort, { once: true });
       });
     }
 
@@ -1934,7 +1951,7 @@ function initApp() {
         const targetTemplate = bulkSelect.value;
         const selectedCbs = tbody.querySelectorAll('.chk-review-row:checked');
         if (selectedCbs.length === 0) {
-          this.ui.showToast('Vui lòng chọn ít nhất một hóa đơn');
+          this.ui.showToast('Vui lòng chọn ít nhất một hóa đơn', { type: 'warning' });
           return;
         }
         selectedCbs.forEach(cb => {
@@ -1943,7 +1960,7 @@ function initApp() {
           const sel = tbody.querySelector(`select[data-index="${idx}"]`);
           if (sel) sel.value = targetTemplate;
         });
-        this.ui.showToast(`Đã đổi mẫu cho ${selectedCbs.length} hóa đơn`);
+        this.ui.showToast(`Đã đổi mẫu cho ${selectedCbs.length} hóa đơn`, { type: 'info' });
       };
 
       tbody.onclick = (e) => {
@@ -2017,7 +2034,7 @@ function initApp() {
             }
           );
         } catch (e) {
-          this.ui.showToast(`Lỗi xuất Excel: ${e.message}`);
+          this.ui.showToast(`Lỗi xuất Excel: ${e.message}`, { type: 'error' });
         } finally {
           btnExport.disabled = false;
           btnExport.textContent = 'Xuất Tất Cả Excel';
