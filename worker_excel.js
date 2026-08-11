@@ -24,26 +24,11 @@ for (const item of items) {
         outputName: path.basename(result.outputPath),
         outputPath: result.outputPath
       });
-      // Di chuyển XML vào thư mục .backup thay vì xóa — cho phép phục hồi nếu Excel bị lỗi
+      // Xóa XML sau khi xuất Excel thành công
       try {
-        const xmlDir = path.dirname(item.xmlPath);
-        const backupDir = path.join(xmlDir, '.backup');
-        if (!fs.existsSync(backupDir)) {
-          fs.mkdirSync(backupDir, { recursive: true });
-        }
-        const backupPath = path.join(backupDir, path.basename(item.xmlPath));
-        fs.renameSync(item.xmlPath, backupPath);
+        fs.unlinkSync(item.xmlPath);
       } catch (e) {
-        // Nếu rename thất bại (cross-device), fallback copy + delete
-        try {
-          const xmlDir = path.dirname(item.xmlPath);
-          const backupDir = path.join(xmlDir, '.backup');
-          if (!fs.existsSync(backupDir)) {
-            fs.mkdirSync(backupDir, { recursive: true });
-          }
-          fs.copyFileSync(item.xmlPath, path.join(backupDir, path.basename(item.xmlPath)));
-          fs.unlinkSync(item.xmlPath);
-        } catch (e2) { /* best-effort backup */ }
+        console.error('Không thể xóa file XML:', e);
       }
     } else {
       results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: result.reason });

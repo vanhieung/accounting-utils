@@ -80,7 +80,7 @@ function initApp() {
       this.container.id = 'electron-batch-dl-root';
       this.container.style.position = 'fixed';
       this.container.style.bottom = '20px';
-      this.container.style.left = '20px';
+      this.container.style.right = '20px';
       this.container.style.zIndex = '999999';
 
       this.shadow = this.container.attachShadow({ mode: 'closed' });
@@ -293,14 +293,19 @@ function initApp() {
     0% { transform: translateX(-200%); }
     100% { transform: translateX(200%); }
   }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
           .modal {
             position: absolute; top:0; left:0; width:100%; height:100%;
             background: rgba(0,0,0,0.5); z-index: 10;
             display: none; flex-direction: column; justify-content: center; align-items: center;
+            animation: fadeIn 0.2s ease-out forwards;
           }
           .modal-content {
             background: white; padding: 15px; border-radius: 10px; width: 88%;
             box-shadow: 0 8px 30px rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 8px;
+            animation: scaleUp 0.3s ease-out forwards;
           }
           #review-modal .modal-content {
             resize: both;
@@ -336,6 +341,8 @@ function initApp() {
           }
           .btn-small:hover {
             background: #0040a3;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
           }
           .btn-small:active {
             transform: scale(0.98);
@@ -744,8 +751,9 @@ function initApp() {
                   <div class="stat-label">Trạng thái</div>
                   <div class="status-badge idle" id="lbl-status-badge">Sẵn sàng</div>
                 </div>
-                <div class="progress-bar-bg">
+                <div class="progress-bar-bg" style="position: relative;">
                   <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                  <div id="progress-text-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; mix-blend-mode: difference; color: white;">0%</div>
                 </div>
               </div>
               <div class="stat-card">
@@ -1297,6 +1305,8 @@ function initApp() {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       this.progressEl.textContent = `${done} / ${total} (${pct}%)`;
       this.progressBarFill.style.width = `${pct}%`;
+      const overlay = this.shadow.getElementById('progress-text-overlay');
+      if (overlay) overlay.textContent = `${pct}%`;
       this.successEl.textContent = success;
       this.failureEl.textContent = failure;
       this.pageEl.textContent = page;
@@ -1994,12 +2004,13 @@ function initApp() {
 
         try {
           // Cập nhật trạng thái tiến độ chi tiết trên nút
-          btnExport.textContent = 'Đang xử lý xuất Excel (Worker)... 0%';
+          const spinner = `<svg style="animation: spin 1s linear infinite; margin-right: 4px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>`;
+          btnExport.innerHTML = `${spinner} Đang xử lý xuất Excel... 0%`;
           
           // Lắng nghe progress từ Worker
           const removeListener = window.electronAPI.onExportProgress((progress) => {
             const percent = Math.round((progress.completed / progress.total) * 100);
-            btnExport.textContent = `Đang xuất: ${progress.completed} / ${progress.total} (${percent}%)`;
+            btnExport.innerHTML = `${spinner} Đang xuất: ${progress.completed} / ${progress.total} (${percent}%)`;
           });
 
           const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
@@ -2094,7 +2105,7 @@ function initApp() {
             </tr>
           </thead>
           <tbody>
-            ${itemsRows.length > 0 ? itemsRows : '<tr><td colspan="7" style="text-align: center; color: #909399;">Không có thông tin chi tiết mặt hàng</td></tr>'}
+            ${itemsRows.length > 0 ? itemsRows : '<tr><td colspan="7" style="text-align: center; color: #909399; padding: 30px;"><svg style="margin-bottom: 8px;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#dcdfe6" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg><br/>Không có thông tin chi tiết mặt hàng</td></tr>'}
           </tbody>
         </table>
 
