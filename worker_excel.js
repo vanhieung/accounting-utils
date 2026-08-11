@@ -26,17 +26,20 @@ async function processItems() {
           outputName: path.basename(result.outputPath),
           outputPath: result.outputPath
         });
-        // Xóa XML sau khi xuất Excel thành công
-        try {
-          await fs.promises.unlink(item.xmlPath);
-        } catch (e) {
-          console.error('Không thể xóa file XML:', e);
-        }
       } else {
         results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: result.reason });
       }
     } catch(err) {
       results.push({ success: false, invoiceNumber: item.invoiceNumber, reason: err.message });
+    } finally {
+      // Xóa XML sau khi xử lý (bất kể thành công hay thất bại để clean hết)
+      try {
+        if (fs.existsSync(item.xmlPath)) {
+          await fs.promises.unlink(item.xmlPath);
+        }
+      } catch (e) {
+        console.error('Không thể xóa file XML:', e);
+      }
     }
     
     // Báo cho main thread biết 1 file đã xong
