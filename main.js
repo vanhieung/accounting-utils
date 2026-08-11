@@ -641,25 +641,60 @@ ipcMain.handle('get-templates', () => {
 });
 
 ipcMain.handle('export-excel-batch', async (event, items) => {
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(path.join(__dirname, 'worker_excel.js'), {
-      workerData: { items, activeMst }
-    });
+  if (!items || items.length === 0) return [];
+  
+  const os = require('os');
+  const numWorkers = Math.min(os.cpus().length || 4, Math.ceil(items.length / 5)); 
+  const workersCount = Math.max(1, numWorkers);
+  const chunkSize = Math.ceil(items.length / workersCount);
+  
+  const totalItems = items.length;
+  let totalCompleted = 0;
+  let lastReportTime = 0;
+  
+  const reportProgress = () => {
+    const now = Date.now();
+    // Throttle UI updates to every 100ms or when finished
+    if (now - lastReportTime > 100 || totalCompleted === totalItems) {
+      event.sender.send('export-excel-progress', { completed: totalCompleted, total: totalItems });
+      lastReportTime = now;
+    }
+  };
+
+  const workerPromises = [];
+  let allResults = [];
+  
+  for (let i = 0; i < workersCount; i++) {
+    const chunk = items.slice(i * chunkSize, (i + 1) * chunkSize);
+    if (chunk.length === 0) continue;
     
-    worker.on('message', (msg) => {
-      if (msg.type === 'progress') {
-        // Report progress to the frontend if needed
-        event.sender.send('export-excel-progress', msg.data);
-      } else if (msg.type === 'done') {
-        resolve(msg.data);
-      }
-    });
-    
-    worker.on('error', reject);
-    worker.on('exit', (code) => {
-      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
-    });
+    workerPromises.push(new Promise((resolve, reject) => {
+      const worker = new Worker(path.join(__dirname, 'worker_excel.js'), {
+        workerData: { items: chunk, activeMst }
+      });
+      
+      worker.on('message', (msg) => {
+        if (msg.type === 'item_done') {
+          totalCompleted++;
+          reportProgress();
+        } else if (msg.type === 'done') {
+          resolve(msg.data);
+        }
+      });
+      
+      worker.on('error', reject);
+      worker.on('exit', (code) => {
+        if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+      });
+    }));
+  }
+  
+  const resultsArray = await Promise.all(workerPromises);
+  resultsArray.forEach(res => {
+    allResults = allResults.concat(res);
   });
+  
+  return allResults;
 });
 
 
