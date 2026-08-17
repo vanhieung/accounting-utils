@@ -1413,13 +1413,25 @@ function initApp() {
           }
           break;
         case 'available':
-          this.updateBanner.classList.add('visible');
-          this.updateMsg.textContent = `Bản v${data.version} đã sẵn sàng. Đang tự động tải...`;
-          this.updateActions.style.display = 'none';
-          this.updateProgress.style.display = 'block';
-          this.updateProgressBar.style.width = '0%';
-          this.updateProgressText.textContent = 'Đang tải...';
-          this.log(`🔄 Phát hiện bản v${data.version}, đang tải ngầm...`, 'warning');
+          if (data.isManual) {
+            // Hide banner because native dialog will handle it
+            this.updateBanner.classList.remove('visible');
+          } else {
+            this.updateBanner.classList.add('visible');
+            this.updateMsg.textContent = `Bản v${data.version} đã sẵn sàng. Đang tự động tải...`;
+            this.updateActions.style.display = 'none';
+            this.updateProgress.style.display = 'block';
+            this.updateProgressBar.style.width = '0%';
+            this.updateProgressText.textContent = 'Đang tải...';
+            this.log(`🔄 Phát hiện bản v${data.version}, đang tải ngầm...`, 'warning');
+          }
+          break;
+        case 'not-available':
+        case 'error':
+        case 'cancelled':
+          if (data.isManual || data.status === 'cancelled') {
+            this.updateBanner.classList.remove('visible');
+          }
           break;
         case 'downloading':
           this.updateBanner.classList.add('visible');

@@ -471,10 +471,54 @@ app.whenReady().then(() => {
           label: 'Kiểm tra cập nhật',
           click: () => {
             isManualUpdateCheck = true;
-            autoUpdater.checkForUpdates().catch(err => {
+            if (!app.isPackaged) {
+              dialog.showMessageBox(batchDownloadWindow, {
+                type: 'info',
+                title: 'Kiểm tra cập nhật',
+                message: 'Chức năng cập nhật chỉ khả dụng khi ứng dụng đã được đóng gói (build).',
+                buttons: ['OK']
+              });
               isManualUpdateCheck = false;
-              // Error is handled by autoUpdater.on('error') event, so no native dialog needed
-            });
+              return;
+            }
+
+            try {
+              const checkPromise = autoUpdater.checkForUpdates();
+              if (checkPromise && typeof checkPromise.catch === 'function') {
+                checkPromise.catch(err => {
+                  if (isManualUpdateCheck) {
+                    dialog.showMessageBox(batchDownloadWindow, {
+                      type: 'error',
+                      title: 'Lỗi cập nhật',
+                      message: 'Không thể kiểm tra cập nhật:\n' + (err.message || err),
+                      buttons: ['OK']
+                    });
+                    isManualUpdateCheck = false;
+                  }
+                });
+              } else {
+                // If it returned null/undefined but didn't throw
+                if (isManualUpdateCheck) {
+                  dialog.showMessageBox(batchDownloadWindow, {
+                    type: 'error',
+                    title: 'Lỗi cập nhật',
+                    message: 'Không thể kiểm tra cập nhật (Updater trả về null).',
+                    buttons: ['OK']
+                  });
+                  isManualUpdateCheck = false;
+                }
+              }
+            } catch (err) {
+              if (isManualUpdateCheck) {
+                dialog.showMessageBox(batchDownloadWindow, {
+                  type: 'error',
+                  title: 'Lỗi cập nhật',
+                  message: 'Không thể kiểm tra cập nhật:\n' + (err.message || err),
+                  buttons: ['OK']
+                });
+                isManualUpdateCheck = false;
+              }
+            }
           }
         },
         { type: 'separator' },
@@ -488,7 +532,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(menu);
 
   // === Auto-Updater Setup ===
-  autoUpdater.autoDownload = true;
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   let isManualUpdateCheck = false;
 
@@ -510,6 +554,25 @@ app.whenReady().then(() => {
       releaseNotes: info.releaseNotes || '',
       releaseDate: info.releaseDate || ''
     });
+    
+    if (isManualUpdateCheck) {
+      dialog.showMessageBox(batchDownloadWindow, {
+        type: 'info',
+        title: 'Có bản cập nhật mới',
+        message: `Đã tìm thấy phiên bản mới (${info.version}). Bạn có muốn tải về và cài đặt ngay không?`,
+        buttons: ['Tải về', 'Bỏ qua'],
+        cancelId: 1
+      }).then((result) => {
+        if (result.response === 0) {
+          autoUpdater.downloadUpdate();
+        } else {
+          // If user skips, hide the checking banner in frontend
+          sendUpdateStatus('update-status', { status: 'cancelled' });
+        }
+      });
+    } else {
+      autoUpdater.downloadUpdate();
+    }
     isManualUpdateCheck = false;
   });
 
@@ -518,6 +581,15 @@ app.whenReady().then(() => {
       status: 'not-available',
       version: info.version
     });
+    
+    if (isManualUpdateCheck) {
+      dialog.showMessageBox(batchDownloadWindow, {
+        type: 'info',
+        title: 'Kiểm tra cập nhật',
+        message: 'Bạn đang sử dụng phiên bản mới nhất.',
+        buttons: ['OK']
+      });
+    }
     isManualUpdateCheck = false;
   });
 
@@ -536,6 +608,19 @@ app.whenReady().then(() => {
       status: 'downloaded',
       version: info.version
     });
+    
+    dialog.showMessageBox(batchDownloadWindow, {
+      type: 'info',
+      title: 'Cập nhật sẵn sàng',
+      message: `Bản cập nhật ${info.version} đã được tải xuống. Bạn có muốn khởi động lại ứng dụng để cài đặt ngay không?`,
+      buttons: ['Khởi động lại ngay', 'Để sau'],
+      defaultId: 0,
+      cancelId: 1
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall(false, true);
+      }
+    });
   });
 
   autoUpdater.on('error', (err) => {
@@ -543,6 +628,15 @@ app.whenReady().then(() => {
       status: 'error',
       message: err.message || 'Lỗi kiểm tra cập nhật'
     });
+    
+    if (isManualUpdateCheck) {
+      dialog.showMessageBox(batchDownloadWindow, {
+        type: 'error',
+        title: 'Lỗi cập nhật',
+        message: 'Có lỗi xảy ra khi kiểm tra cập nhật:\n' + (err.message || ''),
+        buttons: ['OK']
+      });
+    }
     isManualUpdateCheck = false;
   });
 
