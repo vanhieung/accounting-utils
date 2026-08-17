@@ -154,16 +154,21 @@ function initApp() {
           .btn-minimize {
             background: transparent;
             border: none;
-            color: white;
+            color: #0f172a;
             font-weight: bold;
             cursor: pointer;
             font-size: 16px;
             line-height: 1;
-            padding: 0 6px;
+            padding: 0;
             border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
           }
           .btn-minimize:hover {
-            background: rgba(255,255,255,0.2);
+            background: rgba(0,0,0,0.1);
           }
           .header {
     background: rgba(255, 255, 255, 0.4);
@@ -673,7 +678,9 @@ function initApp() {
               <span>Công Cụ Tải Hóa Đơn</span>
               <span class="version-badge" id="version-badge">v--</span>
             </div>
-            <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">_</button>
+            <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
           </div>
 
           <div id="update-banner" class="update-banner">
