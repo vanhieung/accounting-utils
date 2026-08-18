@@ -535,6 +535,7 @@ app.whenReady().then(() => {
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   let isManualUpdateCheck = false;
+  let isManualDownload = false;
 
   // Forward update events to renderer
   function sendUpdateStatus(channel, data) {
@@ -564,16 +565,18 @@ app.whenReady().then(() => {
         cancelId: 1
       }).then((result) => {
         if (result.response === 0) {
+          isManualDownload = true;
           autoUpdater.downloadUpdate();
         } else {
           // If user skips, hide the checking banner in frontend
           sendUpdateStatus('update-status', { status: 'cancelled' });
+          isManualUpdateCheck = false;
         }
       });
     } else {
+      // Tự động tải ngầm
       autoUpdater.downloadUpdate();
     }
-    isManualUpdateCheck = false;
   });
 
   autoUpdater.on('update-not-available', (info) => {
@@ -609,18 +612,25 @@ app.whenReady().then(() => {
       version: info.version
     });
     
-    dialog.showMessageBox(batchDownloadWindow, {
-      type: 'info',
-      title: 'Cập nhật sẵn sàng',
-      message: `Bản cập nhật ${info.version} đã được tải xuống. Bạn có muốn khởi động lại ứng dụng để cài đặt ngay không?`,
-      buttons: ['Khởi động lại ngay', 'Để sau'],
-      defaultId: 0,
-      cancelId: 1
-    }).then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall(false, true);
-      }
-    });
+    if (isManualDownload) {
+      dialog.showMessageBox(batchDownloadWindow, {
+        type: 'info',
+        title: 'Cập nhật sẵn sàng',
+        message: `Bản cập nhật ${info.version} đã được tải xuống. Bạn có muốn khởi động lại ứng dụng để cài đặt ngay không?`,
+        buttons: ['Khởi động lại ngay', 'Để sau'],
+        defaultId: 0,
+        cancelId: 1
+      }).then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall(false, true);
+        }
+      });
+      isManualDownload = false;
+      isManualUpdateCheck = false;
+    } else {
+      console.log(`Bản cập nhật ${info.version} đã tải ngầm xong. Sẽ tự cài đặt khi thoát app.`);
+      // Quá trình cập nhật ngầm: Không hiển thị popup dialog
+    }
   });
 
   autoUpdater.on('error', (err) => {
@@ -638,6 +648,7 @@ app.whenReady().then(() => {
       });
     }
     isManualUpdateCheck = false;
+    isManualDownload = false;
   });
 
   // Check for updates on startup (delay 5s to let app fully load)
