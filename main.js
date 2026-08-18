@@ -40,14 +40,14 @@ function getTemplatesDir(type) {
   if (fs.existsSync(exeTemplates)) {
     return exeTemplates;
   }
-  
+
   // Option 2: In the download destination parent directory (Downloads/assets/buying or /selling)
   const downloadParentTemplates = path.join(path.dirname(downloadDestination), 'assets', subFolder);
   if (!fs.existsSync(downloadParentTemplates)) {
     try {
       fs.mkdirSync(downloadParentTemplates, { recursive: true });
       console.log(`Created user templates folder for ${type} at:`, downloadParentTemplates);
-      
+
       // Auto-copy default template files from app packages
       const defaultAppTemplates = path.join(app.getAppPath(), 'assets', subFolder);
       if (fs.existsSync(defaultAppTemplates)) {
@@ -66,7 +66,7 @@ function getTemplatesDir(type) {
   if (fs.existsSync(downloadParentTemplates)) {
     return downloadParentTemplates;
   }
-  
+
   // Option 3: Fallback inside app directory (app.asar)
   return path.join(app.getAppPath(), 'assets', subFolder);
 }
@@ -254,8 +254,8 @@ function openBatchDownloadWindow() {
 
       let actualDestination = downloadDestination;
       if (organizeFoldersByMst && activeMst) {
-         actualDestination = path.join(downloadDestination, activeMst);
-         fs.mkdirSync(actualDestination, { recursive: true });
+        actualDestination = path.join(downloadDestination, activeMst);
+        fs.mkdirSync(actualDestination, { recursive: true });
       }
       let savePath = path.join(actualDestination, fileName);
 
@@ -351,39 +351,39 @@ function openBatchDownloadWindow() {
             for (const xmlFile of xmlFilesToProcess) {
               try {
                 if (fs.existsSync(templateDir)) {
-                     const invoice = parseInvoiceXML(xmlFile);
-                     if (invoice) {
-                        let actualType = invoiceType;
-                        if (activeMst) {
-                          if (invoice.nban_mst === activeMst) actualType = 'selling';
-                          else if (invoice.nmua_mst === activeMst) actualType = 'buying';
-                        }
-                        const rankings = classifyInvoice(invoice, actualType);
-                        const best = rankings[0] || {};
-                         reviewItems.push({
-                            xmlPath: xmlFile,
-                            invoiceNumber: invoice.so_hdon,
-                            nbanTen: invoice.nban_ten,
-                            nbanMst: invoice.nban_mst,
-                            nbanDchi: invoice.nban_dchi,
-                            nmuaTen: invoice.nmua_ten,
-                            nmuaMst: invoice.nmua_mst,
-                            nmuaDchi: invoice.nmua_dchi,
-                            ngayLap: invoice.ngay_lap,
-                            tongChuaThue: invoice.tong_chua_thue || 0,
-                            tongThue: invoice.tong_thue || 0,
-                            tongThanhToan: invoice.tong_thanh_toan || 0,
-                            items: invoice.items || [],
-                            template: best.file,
-                            templateName: best.name,
-                            score: best.score !== undefined ? best.score : 80,
-                            reasons: best.reasons || [],
-                            invoiceType: actualType,
-                            templateDir: templateDir
-                         });
-                     } else {
-                        skippedReasons.push("Không thể parse XML");
-                     }
+                  const invoice = parseInvoiceXML(xmlFile);
+                  if (invoice) {
+                    let actualType = invoiceType;
+                    if (activeMst) {
+                      if (invoice.nban_mst === activeMst) actualType = 'selling';
+                      else if (invoice.nmua_mst === activeMst) actualType = 'buying';
+                    }
+                    const rankings = classifyInvoice(invoice, actualType);
+                    const best = rankings[0] || {};
+                    reviewItems.push({
+                      xmlPath: xmlFile,
+                      invoiceNumber: invoice.so_hdon,
+                      nbanTen: invoice.nban_ten,
+                      nbanMst: invoice.nban_mst,
+                      nbanDchi: invoice.nban_dchi,
+                      nmuaTen: invoice.nmua_ten,
+                      nmuaMst: invoice.nmua_mst,
+                      nmuaDchi: invoice.nmua_dchi,
+                      ngayLap: invoice.ngay_lap,
+                      tongChuaThue: invoice.tong_chua_thue || 0,
+                      tongThue: invoice.tong_thue || 0,
+                      tongThanhToan: invoice.tong_thanh_toan || 0,
+                      items: invoice.items || [],
+                      template: best.file,
+                      templateName: best.name,
+                      score: best.score !== undefined ? best.score : 80,
+                      reasons: best.reasons || [],
+                      invoiceType: actualType,
+                      templateDir: templateDir
+                    });
+                  } else {
+                    skippedReasons.push("Không thể parse XML");
+                  }
                 } else {
                   skippedReasons.push("Không tìm thấy thư mục mẫu");
                 }
@@ -531,7 +531,7 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
 
-  // === Auto-Updater Setup ===
+  // === Auto-Updater Setup ===a
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   let isManualUpdateCheck = false;
@@ -555,7 +555,7 @@ app.whenReady().then(() => {
       releaseNotes: info.releaseNotes || '',
       releaseDate: info.releaseDate || ''
     });
-    
+
     if (isManualUpdateCheck) {
       dialog.showMessageBox(batchDownloadWindow, {
         type: 'info',
@@ -584,7 +584,7 @@ app.whenReady().then(() => {
       status: 'not-available',
       version: info.version
     });
-    
+
     if (isManualUpdateCheck) {
       dialog.showMessageBox(batchDownloadWindow, {
         type: 'info',
@@ -611,7 +611,7 @@ app.whenReady().then(() => {
       status: 'downloaded',
       version: info.version
     });
-    
+
     if (isManualDownload) {
       dialog.showMessageBox(batchDownloadWindow, {
         type: 'info',
@@ -638,7 +638,7 @@ app.whenReady().then(() => {
       status: 'error',
       message: err.message || 'Lỗi kiểm tra cập nhật'
     });
-    
+
     if (isManualUpdateCheck) {
       dialog.showMessageBox(batchDownloadWindow, {
         type: 'error',
@@ -747,16 +747,16 @@ ipcMain.handle('get-templates', () => {
 
 ipcMain.handle('export-excel-batch', async (event, items) => {
   if (!items || items.length === 0) return [];
-  
+
   const os = require('os');
-  const numWorkers = Math.min(os.cpus().length || 4, Math.ceil(items.length / 5)); 
+  const numWorkers = Math.min(os.cpus().length || 4, Math.ceil(items.length / 5));
   const workersCount = Math.max(1, numWorkers);
   const chunkSize = Math.ceil(items.length / workersCount);
-  
+
   const totalItems = items.length;
   let totalCompleted = 0;
   let lastReportTime = 0;
-  
+
   const reportProgress = () => {
     const now = Date.now();
     // Throttle UI updates to every 100ms or when finished
@@ -768,16 +768,16 @@ ipcMain.handle('export-excel-batch', async (event, items) => {
 
   const workerPromises = [];
   let allResults = [];
-  
+
   for (let i = 0; i < workersCount; i++) {
     const chunk = items.slice(i * chunkSize, (i + 1) * chunkSize);
     if (chunk.length === 0) continue;
-    
+
     workerPromises.push(new Promise((resolve, reject) => {
       const worker = new Worker(path.join(__dirname, 'worker_excel.js'), {
         workerData: { items: chunk, activeMst }
       });
-      
+
       worker.on('message', (msg) => {
         if (msg.type === 'item_done') {
           totalCompleted++;
@@ -786,19 +786,19 @@ ipcMain.handle('export-excel-batch', async (event, items) => {
           resolve(msg.data);
         }
       });
-      
+
       worker.on('error', reject);
       worker.on('exit', (code) => {
         if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
       });
     }));
   }
-  
+
   const resultsArray = await Promise.all(workerPromises);
   resultsArray.forEach(res => {
     allResults = allResults.concat(res);
   });
-  
+
   return allResults;
 });
 
@@ -888,7 +888,7 @@ ipcMain.handle('save-account', async (event, account) => {
   } else {
     accounts.push(accData);
   }
-  
+
   await saveAccountsData(accounts);
   return { success: true, id: accData.id };
 });
@@ -926,7 +926,7 @@ ipcMain.handle('import-excel-accounts', async () => {
 
     for (const row of data) {
       if (!Array.isArray(row)) continue;
-      
+
       let mstIndex = -1;
       let cleanMst = '';
       for (let i = 0; i < row.length; i++) {
@@ -934,7 +934,7 @@ ipcMain.handle('import-excel-accounts', async () => {
         let cellVal = String(row[i]).trim();
         // Xóa hậu tố -QL nếu có
         let potentialMst = cellVal.replace(/-QL$/i, '').trim();
-        
+
         if (mstRegex.test(potentialMst)) {
           mstIndex = i;
           cleanMst = potentialMst;
@@ -944,7 +944,7 @@ ipcMain.handle('import-excel-accounts', async () => {
 
       if (mstIndex !== -1) {
         const mst = cleanMst;
-        
+
         // Mật khẩu là cột có dữ liệu cuối cùng trong dòng
         let password = '';
         for (let i = row.length - 1; i > mstIndex; i--) {
@@ -953,7 +953,7 @@ ipcMain.handle('import-excel-accounts', async () => {
             break;
           }
         }
-        
+
         const name = mstIndex > 0 ? String(row[mstIndex - 1] || '').trim() : '';
 
         if (password) {
