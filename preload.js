@@ -675,7 +675,7 @@ function initApp() {
         <div class="panel" id="main-panel">
           <div class="header">
             <div style="display: flex; align-items: center;">
-              <span>Công Cụ Tải Hóa Đơn</span>
+              <span>Công Cụ Tải Hóa Đơn1</span>
               <span class="version-badge" id="version-badge">v--</span>
             </div>
             <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">
@@ -1181,9 +1181,9 @@ function initApp() {
       this.accounts = await window.electronAPI.getAccounts();
       const optionsContainer = this.shadow.getElementById('account-select-options');
       const label = this.shadow.getElementById('account-select-label');
-      
+
       optionsContainer.innerHTML = '<div class="custom-option selected" data-value="">-- Chọn tài khoản --</div>';
-      
+
       this.accounts.forEach(acc => {
         const div = document.createElement('div');
         div.className = 'custom-option';
@@ -1191,7 +1191,7 @@ function initApp() {
         div.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
         optionsContainer.appendChild(div);
       });
-      
+
       const currentVal = this.accountSelect.value;
       const stillExists = this.accounts.find(a => a.id === currentVal);
       if (!stillExists) {
@@ -1354,9 +1354,9 @@ function initApp() {
       // Phân biệt icon & màu viền theo loại thông báo
       const typeConfig = {
         success: { icon: '✅', borderColor: '#28c76f' },
-        error:   { icon: '❌', borderColor: '#ea5455' },
+        error: { icon: '❌', borderColor: '#ea5455' },
         warning: { icon: '⚠️', borderColor: '#ff9f43' },
-        info:    { icon: 'ℹ️', borderColor: '#007aff' }
+        info: { icon: 'ℹ️', borderColor: '#007aff' }
       };
       const config = typeConfig[type] || typeConfig.success;
       toast.style.borderLeftColor = config.borderColor;
@@ -1694,7 +1694,7 @@ function initApp() {
 
         try {
           const dlResult = await this.downloadRow(currentRow, i, signal, this.skipController.signal);
-          
+
           this.successCount++;
           if (dlResult && dlResult.reviewItems) {
             this.pendingReviews.push(...dlResult.reviewItems);
@@ -2025,7 +2025,7 @@ function initApp() {
           // Cập nhật trạng thái tiến độ chi tiết trên nút
           const spinner = `<svg style="animation: spin 1s linear infinite; margin-right: 4px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>`;
           btnExport.innerHTML = `${spinner} Đang xử lý xuất Excel... 0%`;
-          
+
           // Lắng nghe progress từ Worker
           const removeListener = window.electronAPI.onExportProgress((progress) => {
             const percent = Math.round((progress.completed / progress.total) * 100);

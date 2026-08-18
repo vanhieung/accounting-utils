@@ -531,7 +531,7 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(menuTemplate);
   Menu.setApplicationMenu(menu);
 
-  // === Auto-Updater Setup ===a
+  // === Auto-Updater Setup ===
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
   let isManualUpdateCheck = false;
