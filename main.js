@@ -27,47 +27,53 @@ let activeMst = null;
 let organizeFoldersByMst = false;
 
 function getTemplatesDir(type) {
-  const subFolder = type === 'selling' ? 'selling' : 'buying';
+  const isSelling = type === 'selling' || type === 'ban-ra';
+  const subFolder = isSelling ? 'ban-ra' : 'mua-vao';
+  const folderCandidates = isSelling ? ['ban-ra', 'selling'] : ['mua-vao', 'buying'];
+
+  const findExistingFolder = (baseDir) => {
+    for (const folder of folderCandidates) {
+      const p = path.join(baseDir, 'assets', folder);
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  };
 
   // Trong môi trường phát triển (chưa đóng gói), ưu tiên sử dụng trực tiếp thư mục assets trong dự án
   if (!app.isPackaged) {
+    const devPath = findExistingFolder(app.getAppPath());
+    if (devPath) return devPath;
     return path.join(app.getAppPath(), 'assets', subFolder);
   }
 
   // Option 1: Next to the executable (cho phép ghi đè mẫu ở môi trường sản xuất)
   const exeDir = path.dirname(app.getPath('exe'));
-  const exeTemplates = path.join(exeDir, 'assets', subFolder);
-  if (fs.existsSync(exeTemplates)) {
-    return exeTemplates;
-  }
+  const exeTemplates = findExistingFolder(exeDir);
+  if (exeTemplates) return exeTemplates;
 
-  // Option 2: In the download destination parent directory (Downloads/assets/buying or /selling)
-  const downloadParentTemplates = path.join(path.dirname(downloadDestination), 'assets', subFolder);
-  if (!fs.existsSync(downloadParentTemplates)) {
+  // Option 2: In the download destination parent directory (Downloads/assets/mua-vao or /ban-ra)
+  const downloadParentDir = path.dirname(downloadDestination);
+  const downloadTemplates = findExistingFolder(downloadParentDir);
+  if (downloadTemplates) return downloadTemplates;
+
+  // Auto-copy default template files from app packages
+  const userTemplatesFolder = path.join(downloadParentDir, 'assets', subFolder);
+  if (!fs.existsSync(userTemplatesFolder)) {
     try {
-      fs.mkdirSync(downloadParentTemplates, { recursive: true });
-      console.log(`Created user templates folder for ${type} at:`, downloadParentTemplates);
-
-      // Auto-copy default template files from app packages
-      const defaultAppTemplates = path.join(app.getAppPath(), 'assets', subFolder);
+      fs.mkdirSync(userTemplatesFolder, { recursive: true });
+      const defaultAppTemplates = findExistingFolder(app.getAppPath()) || path.join(app.getAppPath(), 'assets', subFolder);
       if (fs.existsSync(defaultAppTemplates)) {
         const files = fs.readdirSync(defaultAppTemplates);
-        const copyPromises = files.map(file =>
-          fsPromises.copyFile(path.join(defaultAppTemplates, file), path.join(downloadParentTemplates, file))
-        );
-        Promise.all(copyPromises).then(() => {
-          console.log(`Copied default ${type} templates to user templates folder.`);
-        }).catch(err => console.error(`Error copying templates:`, err));
+        Promise.all(files.map(file =>
+          fsPromises.copyFile(path.join(defaultAppTemplates, file), path.join(userTemplatesFolder, file))
+        )).catch(err => console.error('Error copying templates:', err));
       }
     } catch (e) {
       console.error(`Lỗi tạo thư mục templates ${subFolder} ở Downloads:`, e);
     }
   }
-  if (fs.existsSync(downloadParentTemplates)) {
-    return downloadParentTemplates;
-  }
+  if (fs.existsSync(userTemplatesFolder)) return userTemplatesFolder;
 
-  // Option 3: Fallback inside app directory (app.asar)
   return path.join(app.getAppPath(), 'assets', subFolder);
 }
 
@@ -134,6 +140,35 @@ async function saveAccountsData(accounts) {
     await fsPromises.writeFile(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
   } catch (e) {
     console.error('Lỗi lưu accounts.json:', e);
+  }
+}
+
+const HISTORY_FILE = path.join(app.getPath('userData'), 'history.json');
+let cachedHistory = null;
+
+async function loadHistory() {
+  if (cachedHistory !== null) return cachedHistory;
+  try {
+    const exists = await fsPromises.access(HISTORY_FILE).then(() => true).catch(() => false);
+    if (exists) {
+      const data = await fsPromises.readFile(HISTORY_FILE, 'utf8');
+      cachedHistory = JSON.parse(data);
+    } else {
+      cachedHistory = [];
+    }
+  } catch (e) {
+    console.error('Lỗi đọc history.json:', e);
+    cachedHistory = [];
+  }
+  return cachedHistory;
+}
+
+async function saveHistoryData(history) {
+  cachedHistory = history;
+  try {
+    await fsPromises.writeFile(HISTORY_FILE, JSON.stringify(history, null, 2));
+  } catch (e) {
+    console.error('Lỗi lưu history.json:', e);
   }
 }
 
@@ -347,17 +382,19 @@ function openBatchDownloadWindow() {
           let reviewItems = [];
           let skippedReasons = [];
           if (finalStatus === 'success' && xmlFilesToProcess.length > 0) {
-            const templateDir = getTemplatesDir(invoiceType);
             for (const xmlFile of xmlFilesToProcess) {
               try {
-                if (fs.existsSync(templateDir)) {
-                  const invoice = parseInvoiceXML(xmlFile);
-                  if (invoice) {
-                    let actualType = invoiceType;
-                    if (activeMst) {
-                      if (invoice.nban_mst === activeMst) actualType = 'selling';
-                      else if (invoice.nmua_mst === activeMst) actualType = 'buying';
-                    }
+                const invoice = parseInvoiceXML(xmlFile);
+                if (invoice) {
+                  let actualType = invoiceType;
+                  if (activeMst) {
+                    if (invoice.nban_mst === activeMst) actualType = 'selling';
+                    else if (invoice.nmua_mst === activeMst) actualType = 'buying';
+                  }
+                  // Resolve templateDir using actualType (after auto-detection) so the
+                  // correct buying/ or selling/ folder is used downstream
+                  const templateDir = getTemplatesDir(actualType);
+                  if (fs.existsSync(templateDir)) {
                     const rankings = classifyInvoice(invoice, actualType);
                     const best = rankings[0] || {};
                     reviewItems.push({
@@ -382,10 +419,10 @@ function openBatchDownloadWindow() {
                       templateDir: templateDir
                     });
                   } else {
-                    skippedReasons.push("Không thể parse XML");
+                    skippedReasons.push("Không tìm thấy thư mục mẫu");
                   }
                 } else {
-                  skippedReasons.push("Không tìm thấy thư mục mẫu");
+                  skippedReasons.push("Không thể parse XML");
                 }
               } catch (err) {
                 console.error('Error processing XML for MISA:', err);
@@ -739,19 +776,218 @@ ipcMain.handle('open-file', (event, filePath) => {
   return { success: false, reason: 'File không tồn tại' };
 });
 
+// Cho phép renderer gửi "cú click chuột thật" (trusted input event) vào trang web.
+// Ant Design Table nhiều khi bỏ qua synthetic click (dispatchEvent) sau khi chuyển
+// tab Mua vào ↔ Bán ra → phải gửi mouseDown/mouseUp qua webContents.sendInputEvent
+// để mở được chi tiết hóa đơn mà không cần người dùng bấm tay.
+ipcMain.on('send-input-event', (event, inputEvents) => {
+  try {
+    const wc = batchDownloadWindow && !batchDownloadWindow.isDestroyed() ? batchDownloadWindow.webContents : null;
+    if (!wc || !Array.isArray(inputEvents)) return;
+    for (const evt of inputEvents) {
+      if (!evt || typeof evt.type !== 'string') continue;
+      wc.sendInputEvent({
+        type: evt.type,
+        x: evt.x,
+        y: evt.y,
+        button: evt.button || 'left',
+        clickCount: evt.clickCount || 1
+      });
+    }
+  } catch (e) {
+    console.error('Lỗi gửi trusted input event:', e);
+  }
+});
+
+function buildInvoiceXMLString(invoiceData) {
+  const escapeXml = (str) => {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;');
+  };
+
+  const itemsXml = (invoiceData.items || []).map((it, idx) => `
+        <HHDVu>
+          <TChat>${escapeXml(it.tchat || '1')}</TChat>
+          <STT>${idx + 1}</STT>
+          <MHHDVu>${escapeXml(it.ma || '')}</MHHDVu>
+          <THHDVu>${escapeXml(it.ten || '')}</THHDVu>
+          <DVTinh>${escapeXml(it.dvt || '')}</DVTinh>
+          <SLuong>${it.so_luong !== null && it.so_luong !== undefined ? it.so_luong : 1}</SLuong>
+          <DGia>${it.don_gia || 0}</DGia>
+          <ThTien>${it.thanh_tien || 0}</ThTien>
+          <TSuat>${escapeXml(it.thue_suat || '')}</TSuat>
+        </HHDVu>`).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<HDon>
+  <DLHDon>
+    <TTChung>
+      <KHMSHDon>${escapeXml(invoiceData.kh_ms_hdon || '1')}</KHMSHDon>
+      <KHHDon>${escapeXml(invoiceData.kh_hdon || 'C26MVT')}</KHHDon>
+      <SHDon>${escapeXml(invoiceData.so_hdon || '1')}</SHDon>
+      <NLap>${escapeXml(invoiceData.ngay_lap || '')}</NLap>
+      <DVTTe>${escapeXml(invoiceData.dvt_te || 'VND')}</DVTTe>
+      <HTTToan>${escapeXml(invoiceData.httt || 'CK')}</HTTToan>
+    </TTChung>
+    <NDHDon>
+      <NBan>
+        <Ten>${escapeXml(invoiceData.nban_ten || '')}</Ten>
+        <MST>${escapeXml(invoiceData.nban_mst || '')}</MST>
+        <DChi>${escapeXml(invoiceData.nban_dchi || '')}</DChi>
+      </NBan>
+      <NMua>
+        <Ten>${escapeXml(invoiceData.nmua_ten || '')}</Ten>
+        <MST>${escapeXml(invoiceData.nmua_mst || '')}</MST>
+        <DChi>${escapeXml(invoiceData.nmua_dchi || '')}</DChi>
+      </NMua>
+      <DSHHDVu>
+        ${itemsXml}
+      </DSHHDVu>
+      <TToan>
+        <TgTCThue>${invoiceData.tong_chua_thue || 0}</TgTCThue>
+        <TgTThue>${invoiceData.tong_thue || 0}</TgTThue>
+        <TgTTTBSo>${invoiceData.tong_thanh_toan || 0}</TgTTTBSo>
+      </TToan>
+    </NDHDon>
+  </DLHDon>
+</HDon>`;
+}
+
+ipcMain.handle('save-crawled-invoice-xml', async (event, payload) => {
+  try {
+    const { invoiceData, invoiceType } = payload;
+    if (!invoiceData) throw new Error('Dữ liệu hóa đơn rỗng');
+
+    const destDir = downloadDestination || app.getPath('downloads');
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+
+    const xmlContent = buildInvoiceXMLString(invoiceData);
+    const cleanSoHdon = (invoiceData.so_hdon || Date.now()).toString().replace(/[^a-zA-Z0-9_-]/g, '');
+    let destFileName = `HD_${cleanSoHdon}.xml`;
+    let destPath = path.join(destDir, destFileName);
+
+    let counter = 1;
+    while (fs.existsSync(destPath)) {
+      destFileName = `HD_${cleanSoHdon}_${counter}.xml`;
+      destPath = path.join(destDir, destFileName);
+      counter++;
+    }
+
+    await fsPromises.writeFile(destPath, xmlContent, 'utf8');
+
+    const invoice = parseInvoiceXML(destPath);
+    let reviewItems = [];
+    if (invoice) {
+      let actualType = invoiceType || 'buying';
+      if (activeMst) {
+        if (invoice.nban_mst === activeMst) actualType = 'selling';
+        else if (invoice.nmua_mst === activeMst) actualType = 'buying';
+      }
+      const templateDir = getTemplatesDir(actualType);
+      if (fs.existsSync(templateDir)) {
+        const rankings = classifyInvoice(invoice, actualType);
+        const best = rankings[0] || {};
+        reviewItems.push({
+          xmlPath: destPath,
+          invoiceNumber: invoice.so_hdon,
+          nbanTen: invoice.nban_ten,
+          nbanMst: invoice.nban_mst,
+          nbanDchi: invoice.nban_dchi,
+          nmuaTen: invoice.nmua_ten,
+          nmuaMst: invoice.nmua_mst,
+          nmuaDchi: invoice.nmua_dchi,
+          ngayLap: invoice.ngay_lap,
+          tongChuaThue: invoice.tong_chua_thue || 0,
+          tongThue: invoice.tong_thue || 0,
+          tongThanhToan: invoice.tong_thanh_toan || 0,
+          items: invoice.items || [],
+          template: best.file,
+          templateName: best.name,
+          score: best.score !== undefined ? best.score : 80,
+          reasons: best.reasons || [],
+          invoiceType: actualType,
+          templateDir: templateDir
+        });
+      }
+    }
+
+    return { success: true, xmlPath: destPath, reviewItems };
+  } catch (err) {
+    console.error('Lỗi tạo file XML từ dữ liệu crawl:', err);
+    return { success: false, reason: err.message };
+  }
+});
+
+
 ipcMain.handle('get-templates', () => {
-  const buying = classifyInvoice({ items: [] }, 'buying').map(t => ({ file: t.file, name: t.name }));
-  const selling = classifyInvoice({ items: [] }, 'selling').map(t => ({ file: t.file, name: t.name }));
+  const buying = [
+    { file: 'Don_mua_hang.xls', name: 'Đơn mua hàng' },
+    { file: 'Mau_Hop_dong_mua.xls', name: 'Hợp đồng mua hàng' },
+    { file: 'Mua_hang_qua_kho.xls', name: 'Mua hàng qua kho' },
+    { file: 'Mua_hang_khong_qua_kho.xls', name: 'Mua hàng không qua kho' },
+    { file: 'Mua_hang_nhieu_hoa_don_qua_kho.xls', name: 'Mua hàng nhiều hóa đơn qua kho' },
+    { file: 'Mua_hang_nhieu_hoa_don_khong_qua_kho.xls', name: 'Mua hàng nhiều hóa đơn không qua kho' },
+    { file: 'Mua_dich_vu.xls', name: 'Mua dịch vụ' },
+    { file: 'Tra_lai_hang_mua_qua_kho.xls', name: 'Hàng mua trả lại qua kho' },
+    { file: 'Tra_lai_hang_mua_khong_qua_kho.xls', name: 'Hàng mua trả lại không qua kho' },
+    { file: 'Hang_mua_giam_gia.xls', name: 'Hàng mua giảm giá' }
+  ];
+  const selling = [
+    { file: 'Ban_hang.xls', name: 'Bán hàng' },
+    { file: 'Hoa_don_ban_hang.xls', name: 'Hóa đơn bán hàng' },
+    { file: 'Hang_ban_giam_gia.xls', name: 'Hàng bán giảm giá' },
+    { file: 'Hang_ban_tra_lai.xls', name: 'Hàng bán trả lại' },
+    { file: 'Doanh_thu_nhan_truoc.xls', name: 'Doanh thu nhận trước' }
+  ];
   return { buying, selling };
+});
+
+ipcMain.handle('get-history', async () => {
+  return await loadHistory();
+});
+
+ipcMain.handle('add-history', async (event, newItems) => {
+  const history = await loadHistory();
+  history.unshift(...newItems);
+  if (history.length > 2000) history.length = 2000;
+  await saveHistoryData(history);
+  return { success: true };
+});
+
+ipcMain.handle('clear-history', async () => {
+  await saveHistoryData([]);
+  return { success: true };
 });
 
 ipcMain.handle('export-excel-batch', async (event, items) => {
   if (!items || items.length === 0) return [];
 
   const os = require('os');
-  const numWorkers = Math.min(os.cpus().length || 4, Math.ceil(items.length / 5));
-  const workersCount = Math.max(1, numWorkers);
-  const chunkSize = Math.ceil(items.length / workersCount);
+
+  // QUAN TRỌNG: Nhóm các hóa đơn có cùng file Excel ĐÍCH lại với nhau
+  // (cùng template + cùng tháng + cùng thư mục) để mỗi file chỉ do DUY NHẤT
+  // một worker xử lý. Trước đây các worker ghi song song vào cùng một file .xls
+  // gây race condition → file bị hỏng/ghi đè → sau khi export không có dữ liệu.
+  const groups = new Map();
+  for (const item of items) {
+    const period = (item.ngayLap || '').substring(0, 7); // YYYY-MM
+    const destKey = path.join(path.dirname(item.xmlPath), period, item.template || '').toLowerCase();
+    if (!groups.has(destKey)) groups.set(destKey, []);
+    groups.get(destKey).push(item);
+  }
+  const groupList = Array.from(groups.values());
+
+  // Số worker tối đa bằng số nhóm — mỗi worker nhận nguyên cụm các nhóm riêng biệt,
+  // không bao giờ có 2 worker cùng ghi vào 1 file đích.
+  const desiredWorkers = Math.max(1, Math.min(os.cpus().length || 4, Math.ceil(groupList.length)));
+  const workersCount = Math.min(desiredWorkers, groupList.length);
 
   const totalItems = items.length;
   let totalCompleted = 0;
@@ -769,9 +1005,11 @@ ipcMain.handle('export-excel-batch', async (event, items) => {
   const workerPromises = [];
   let allResults = [];
 
+  // Phân phối từng NHÓM nguyên vẹn cho worker (round-robin theo nhóm)
   for (let i = 0; i < workersCount; i++) {
-    const chunk = items.slice(i * chunkSize, (i + 1) * chunkSize);
-    if (chunk.length === 0) continue;
+    const workerGroups = groupList.filter((_, gIdx) => gIdx % workersCount === i);
+    if (workerGroups.length === 0) continue;
+    const chunk = workerGroups.flat();
 
     workerPromises.push(new Promise((resolve, reject) => {
       const worker = new Worker(path.join(__dirname, 'worker_excel.js'), {
@@ -924,60 +1162,123 @@ ipcMain.handle('import-excel-accounts', async () => {
     let importedCount = 0;
     const mstRegex = /^\d{10}(-\d{3})?$/; // compiled once per import session
 
-    for (const row of data) {
+    // Quét tìm dòng tiêu đề (header) nếu có trong 5 dòng đầu
+    let headerRowIdx = -1;
+    let headerMstIdx = -1;
+    let headerNameIdx = -1;
+    let headerPwdIdx = -1;
+
+    const mstKeywords = ['mã số thuế', 'mst', 'mã thuế', 'tên đăng nhập', 'tendangnhap', 'username', 'tai khoan', 'tài khoản'];
+    const nameKeywords = ['tên công ty', 'ten cong ty', 'tên doanh nghiệp', 'ten doanh nghiep', 'tên đơn vị', 'ten don vi', 'tên công ty/đơn vị', 'tên cty', 'ten cty', 'tên', 'name', 'company'];
+    const pwdKeywords = ['mật khẩu', 'mat khau', 'password', 'pass', 'mk'];
+
+    for (let r = 0; r < Math.min(data.length, 5); r++) {
+      const row = data[r];
       if (!Array.isArray(row)) continue;
 
-      let mstIndex = -1;
-      let cleanMst = '';
-      for (let i = 0; i < row.length; i++) {
-        if (!row[i]) continue;
-        let cellVal = String(row[i]).trim();
-        // Xóa hậu tố -QL nếu có
-        let potentialMst = cellVal.replace(/-QL$/i, '').trim();
+      let foundMst = -1;
+      let foundName = -1;
+      let foundPwd = -1;
 
-        if (mstRegex.test(potentialMst)) {
-          mstIndex = i;
-          cleanMst = potentialMst;
-          break;
+      for (let c = 0; c < row.length; c++) {
+        if (!row[c]) continue;
+        const text = String(row[c]).trim().toLowerCase();
+        if (foundMst === -1 && mstKeywords.some(k => text === k || text.includes(k))) {
+          foundMst = c;
+        } else if (foundName === -1 && nameKeywords.some(k => text === k || text.includes(k))) {
+          foundName = c;
+        } else if (foundPwd === -1 && pwdKeywords.some(k => text === k || text.includes(k))) {
+          foundPwd = c;
         }
       }
 
-      if (mstIndex !== -1) {
-        const mst = cleanMst;
+      if (foundMst !== -1 || (foundName !== -1 && foundPwd !== -1)) {
+        headerRowIdx = r;
+        headerMstIdx = foundMst;
+        headerNameIdx = foundName;
+        headerPwdIdx = foundPwd;
+        break;
+      }
+    }
 
-        // Mật khẩu là cột có dữ liệu cuối cùng trong dòng
-        let password = '';
-        for (let i = row.length - 1; i > mstIndex; i--) {
-          if (row[i] && String(row[i]).trim() !== '') {
-            password = String(row[i]).trim();
+    const startRowIdx = headerRowIdx >= 0 ? headerRowIdx + 1 : 0;
+
+    for (let r = startRowIdx; r < data.length; r++) {
+      const row = data[r];
+      if (!Array.isArray(row)) continue;
+
+      let mst = '';
+      let name = '';
+      let password = '';
+
+      if (headerRowIdx >= 0 && headerMstIdx >= 0) {
+        let cellVal = String(row[headerMstIdx] || '').trim();
+        let cleanMst = cellVal.replace(/-QL$/i, '').trim();
+        if (mstRegex.test(cleanMst)) {
+          mst = cleanMst;
+          name = headerNameIdx >= 0 ? String(row[headerNameIdx] || '').trim() : '';
+          password = headerPwdIdx >= 0 ? String(row[headerPwdIdx] || '').trim() : '';
+
+          if (!password) {
+            for (let i = row.length - 1; i > headerMstIdx; i--) {
+              if (row[i] && String(row[i]).trim() !== '' && i !== headerNameIdx) {
+                password = String(row[i]).trim();
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // Nếu không khớp với header scan, dùng thuật toán regex để tự nhận diện
+      if (!mst) {
+        let mstIndex = -1;
+        let cleanMst = '';
+        for (let i = 0; i < row.length; i++) {
+          if (!row[i]) continue;
+          let cellVal = String(row[i]).trim();
+          let potentialMst = cellVal.replace(/-QL$/i, '').trim();
+
+          if (mstRegex.test(potentialMst)) {
+            mstIndex = i;
+            cleanMst = potentialMst;
             break;
           }
         }
 
-        const name = mstIndex > 0 ? String(row[mstIndex - 1] || '').trim() : '';
-
-        if (password) {
-          let encryptedPassword = '';
-          if (safeStorage.isEncryptionAvailable()) {
-            const buffer = safeStorage.encryptString(password);
-            encryptedPassword = buffer.toString('base64');
+        if (mstIndex !== -1) {
+          mst = cleanMst;
+          for (let i = row.length - 1; i > mstIndex; i--) {
+            if (row[i] && String(row[i]).trim() !== '') {
+              password = String(row[i]).trim();
+              break;
+            }
           }
-
-          const existingIndex = accounts.findIndex(a => a.mst === mst);
-          const accData = {
-            id: existingIndex >= 0 ? accounts[existingIndex].id : Date.now().toString() + Math.random(),
-            mst,
-            name,
-            encryptedPassword
-          };
-
-          if (existingIndex >= 0) {
-            accounts[existingIndex] = accData;
-          } else {
-            accounts.push(accData);
-          }
-          importedCount++;
+          name = mstIndex > 0 ? String(row[mstIndex - 1] || '').trim() : '';
         }
+      }
+
+      if (mst && password) {
+        let encryptedPassword = '';
+        if (safeStorage.isEncryptionAvailable()) {
+          const buffer = safeStorage.encryptString(password);
+          encryptedPassword = buffer.toString('base64');
+        }
+
+        const existingIndex = accounts.findIndex(a => a.mst === mst);
+        const accData = {
+          id: existingIndex >= 0 ? accounts[existingIndex].id : Date.now().toString() + Math.random(),
+          mst,
+          name,
+          encryptedPassword
+        };
+
+        if (existingIndex >= 0) {
+          accounts[existingIndex] = accData;
+        } else {
+          accounts.push(accData);
+        }
+        importedCount++;
       }
     }
 
@@ -1006,15 +1307,39 @@ ipcMain.handle('set-organize-folders', (event, enabled) => {
 ipcMain.handle('get-organize-folders', () => organizeFoldersByMst);
 
 ipcMain.handle('delete-xml-batch', async (event, items) => {
+  if (!Array.isArray(items)) return { success: false };
+
+  // Tập hợp các thư mục chứa XML đã xóa để dọn thư mục trống sau đó
+  const dirsToClean = new Set();
+
   for (const item of items) {
     try {
-      if (fs.existsSync(item.xmlPath)) {
-        fs.unlinkSync(item.xmlPath);
+      const xmlPath = typeof item === 'string' ? item : (item && item.xmlPath);
+      if (xmlPath && fs.existsSync(xmlPath)) {
+        dirsToClean.add(path.dirname(xmlPath));
+        fs.unlinkSync(xmlPath);
       }
     } catch (e) {
       console.error('Lỗi xóa XML:', e);
     }
   }
+
+  // Dọn các thư mục trống (thư mục tháng YYYY-MM, và thư mục cha theo MST nếu rỗng)
+  for (const dir of dirsToClean) {
+    try {
+      if (fs.existsSync(dir) && fs.readdirSync(dir).length === 0) {
+        fs.rmdirSync(dir);
+        // Tiếp tục dọn thư mục cha nếu cũng rỗng (vd: thư mục MST)
+        const parent = path.dirname(dir);
+        if (fs.existsSync(parent) && fs.readdirSync(parent).length === 0) {
+          fs.rmdirSync(parent);
+        }
+      }
+    } catch (e) {
+      // Bỏ qua nếu không thể xóa (thư mục không rỗng hoặc đang được dùng)
+    }
+  }
+
   return { success: true };
 });
 
@@ -1064,3 +1389,53 @@ ipcMain.handle('export-accounts-excel', async () => {
     return { success: false, reason: error.message };
   }
 });
+
+// === Download Account Template Excel ===
+ipcMain.handle('download-account-template', async () => {
+  try {
+    const result = await dialog.showSaveDialog(batchDownloadWindow, {
+      title: 'Tải mẫu Excel nhập tài khoản',
+      defaultPath: path.join(app.getPath('downloads'), 'Mau_nhap_tai_khoan.xlsx'),
+      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, reason: 'canceled' };
+    }
+
+    const xlsx = require('xlsx');
+    const templateData = [
+      {
+        'STT': 1,
+        'Mã số thuế': '0101234567',
+        'Tên công ty': 'Công ty TNHH Mẫu A',
+        'Mật khẩu': 'MatKhau123@'
+      },
+      {
+        'STT': 2,
+        'Mã số thuế': '0312345678',
+        'Tên công ty': 'Công ty Cổ phần Mẫu B',
+        'Mật khẩu': 'MatKhau456#'
+      }
+    ];
+
+    const ws = xlsx.utils.json_to_sheet(templateData, { header: ['STT', 'Mã số thuế', 'Tên công ty', 'Mật khẩu'] });
+
+    ws['!cols'] = [
+      { wch: 6 },  // STT
+      { wch: 18 }, // Mã số thuế
+      { wch: 35 }, // Tên công ty
+      { wch: 20 }  // Mật khẩu
+    ];
+
+    const wb = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(wb, ws, 'MauNhapTaiKhoan');
+    xlsx.writeFile(wb, result.filePath);
+
+    return { success: true, filePath: result.filePath, dirPath: path.dirname(result.filePath) };
+  } catch (error) {
+    console.error('Lỗi tải mẫu Excel:', error);
+    return { success: false, reason: error.message };
+  }
+});
+

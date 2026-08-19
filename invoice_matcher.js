@@ -174,7 +174,7 @@ function parseInvoiceXML(xmlPath) {
 // Classifier Engine
 function classifyInvoice(invoice, type = 'buying') {
     const items = invoice.items || [];
-    
+
     // Analyze item keywords & TChat tags
     let serviceScore = 0;
     let goodsScore = 0;
@@ -217,7 +217,7 @@ function classifyInvoice(invoice, type = 'buying') {
     const isPhysicalGoods = goodsScore >= serviceScore && goodsScore > 0;
     const isConsumable = consumableScore > 0;
     const isStockable = stockableScore > 0;
-    
+
     const hasInvoiceNumber = invoice.so_hdon !== undefined && invoice.so_hdon !== null;
     const allPositiveAmounts = items.every(item => (item.thanh_tien || 0) >= 0);
 
@@ -239,6 +239,34 @@ function classifyInvoice(invoice, type = 'buying') {
             reasons: [
                 isService ? "✅ Nội dung là dịch vụ/bản quyền/phí" : "⚠ Thường dùng cho dịch vụ hoặc bán hàng không kiêm xuất kho",
             ]
+        },
+        {
+            file: "Bao_gia.xls",
+            name: "Báo giá",
+            exclude: hasInvoiceNumber,
+            score: 0,
+            reasons: ["❌ Loại trừ: Đã phát hành số hóa đơn → không phải báo giá dự kiến"]
+        },
+        {
+            file: "Don_dat_hang.xls",
+            name: "Đơn đặt hàng",
+            exclude: hasInvoiceNumber,
+            score: 0,
+            reasons: ["❌ Loại trừ: Đã phát hành số hóa đơn → không phải đơn đặt hàng dự kiến"]
+        },
+        {
+            file: "Doanh_thu_nhan_truoc.xls",
+            name: "Doanh thu nhận trước",
+            exclude: true,
+            score: 0,
+            reasons: ["❌ Loại trừ: File XML là hóa đơn điện tử, cần xác nhận thủ công nếu là doanh thu nhận trước"]
+        },
+        {
+            file: "Doanh_thu_nhan_truoc_dau_ky.xls",
+            name: "Doanh thu nhận trước đầu kỳ",
+            exclude: true,
+            score: 0,
+            reasons: ["❌ Loại trừ: File XML là hóa đơn điện tử, cần xác nhận thủ công nếu là doanh thu nhận trước đầu kỳ"]
         },
         {
             file: "Hang_ban_giam_gia.xls",
@@ -360,7 +388,7 @@ const valueMapper = {
     "Số hóa đơn": (invoice, item) => invoice.so_hdon,
     "Ngày hóa đơn": (invoice, item) => formatDate(invoice.ngay_lap),
     "Ngày hóa đơn (*)": (invoice, item) => formatDate(invoice.ngay_lap),
-    
+
     // Voucher numbers / So chung tu
     "Số chứng từ (*)": (invoice, item) => invoice.so_hdon,
     "Số chứng từ": (invoice, item) => invoice.so_hdon,
@@ -374,7 +402,9 @@ const valueMapper = {
     "Số báo giá": (invoice, item) => invoice.so_hdon,
     "STT Hóa đơn (*)": (invoice, item) => 1,
     "Số phiếu xuất": (invoice, item) => invoice.so_hdon,
-    
+    "Số phiếu thu": (invoice, item) => invoice.so_hdon,
+    "Số chứng từ thanh toán": (invoice, item) => invoice.so_hdon,
+
     // Partner reference
     "Mã nhà cung cấp": (invoice, item) => invoice.nban_mst,
     "Mã nhà cung cấp (*)": (invoice, item) => invoice.nban_mst,
@@ -386,18 +416,23 @@ const valueMapper = {
     "Mã khách hàng": (invoice, item) => invoice.nmua_mst,
     "Mã khách hàng (*)": (invoice, item) => invoice.nmua_mst,
     "Tên khách hàng": (invoice, item) => invoice.nmua_ten,
-    "Mã số thuế": (invoice, item) => invoice.nmua_mst,
+    "Mã số thuế": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_mst : invoice.nban_mst,
     "Địa chỉ khách hàng": (invoice, item) => invoice.nmua_dchi,
     "Đối tượng": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_mst : invoice.nban_mst,
     "Mã đối tượng": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_mst : invoice.nban_mst,
-    
+    "Người mua hàng": (invoice, item) => invoice.nmua_ten,
+    "Người giao hàng": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_ten : invoice.nban_ten,
+    "Người liên hệ": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_ten : invoice.nban_ten,
+
     // Accounts Defaults
     "TK chi phí (*)": (invoice, item) => "6422",
     "TK kho (*)": (invoice, item) => "1561",
+    "TK kho": (invoice, item) => "1561",
+    "TK Kho": (invoice, item) => "1561",
     "TK chi phí/TK kho (*)": (invoice, item) => "6422",
     "TK kho/TK chi phí (*)": (invoice, item) => "1561",
-    "TK công nợ/TK tiền (*)": (invoice, item) => "331",
-    "TK công nợ/TK tiền/TK có (*)": (invoice, item) => "331",
+    "TK công nợ/TK tiền (*)": (invoice, item) => invoice.type === 'selling' ? "131" : "331",
+    "TK công nợ/TK tiền/TK có (*)": (invoice, item) => invoice.type === 'selling' ? "131" : "331",
     "TK Tiền/Chi phí/Nợ (*)": (invoice, item) => "131",
     "TK Doanh thu/Có (*)": (invoice, item) => {
         const isService = invoice.items && invoice.items.some(it => {
@@ -410,14 +445,18 @@ const valueMapper = {
     "TK giảm giá/TK nợ": (invoice, item) => "5211",
     "TK trả lại/TK nợ (*)": (invoice, item) => "5212",
     "TK trả lại/TK nợ": (invoice, item) => "5212",
+    "TK chiết khấu": (invoice, item) => "5211",
+    "TK giá vốn": (invoice, item) => "632",
     "TK thuế GTGT": (invoice, item) => invoice.type === 'selling' ? "33311" : "1331",
     "TKĐƯ thuế GTGT": (invoice, item) => invoice.type === 'selling' ? "131" : "331",
 
     // Warehouse mappings
     "Mã kho": (invoice, item) => "156",
     "Kho": (invoice, item) => "156",
-    "TK Kho": (invoice, item) => "1561",
-    "TK kho": (invoice, item) => "1561",
+    "Cách lấy đơn giá nhập": (invoice, item) => 1,
+    "Kèm theo chứng từ gốc (Phiếu nhập)": (invoice, item) => 0,
+    "Hàng hoá giữ hộ/bán hộ": (invoice, item) => 0,
+    "Hàng hóa giữ hộ/bán hộ": (invoice, item) => 0,
 
     // Unearned revenue details
     "Mã DT nhận trước (*)": (invoice, item) => item.ma || `DTNT_${invoice.so_hdon}`,
@@ -430,12 +469,14 @@ const valueMapper = {
     "Số kỳ đã phân bổ (*)": (invoice, item) => 0,
     "Số tiền đã phân bổ (*)": (invoice, item) => 0,
     "TK DT chưa thực hiện (*)": (invoice, item) => "3387",
+    "PB chi tiết theo đối tượng": (invoice, item) => 0,
+    "TK phân bổ doanh thu": (invoice, item) => "5111",
+    "Đối tượng phân bổ": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_mst : invoice.nban_mst,
+    "Tỷ lệ phân bổ": (invoice, item) => 100,
+    "TK phân bổ DT theo đối tượng": (invoice, item) => "5111",
 
-    // General transaction types
-    "Hình thức mua hàng": (invoice, item) => {
-        // Hóa đơn điện tử lấy từ web thuế mặc định là mua hàng trong nước (1)
-        return 1; 
-    },
+    // General transaction types & Statuses
+    "Hình thức mua hàng": (invoice, item) => 1,
     "Hình thức bán hàng": (invoice, item) => {
         if (invoice.template === "Hoa_don_ban_hang.xls") {
             return 1; // Bán hàng hóa, dịch vụ trong nước
@@ -449,7 +490,7 @@ const valueMapper = {
         const httt = (invoice.httt || "").toUpperCase();
         if (httt === "TM") return 1; // Tiền mặt
         if (httt === "CK") return 2; // Ủy nhiệm chi
-        return 0; // Chưa thanh toán (mặc định cho các hình thức hỗn hợp như TM/CK)
+        return 0; // Chưa thanh toán
     },
     "Kiêm phiếu xuất kho": (invoice, item) => {
         const isService = invoice.items && invoice.items.some(it => {
@@ -462,15 +503,24 @@ const valueMapper = {
     "Lập kèm hóa đơn": (invoice, item) => 1,
     "Đã lập hóa đơn": (invoice, item) => 1,
     "Đã hạch toán": (invoice, item) => 1,
+    "Tình trạng": (invoice, item) => 1,
+    "Tính giá thành": (invoice, item) => 0,
 
     // Flags / Placeholders
     "Là CP mua hàng": (invoice, item) => 0,
     "Hàng khuyến mại": (invoice, item) => 0,
     "Là dòng chiết khấu thương mại": (invoice, item) => 0,
+    "XK vào khu phi thuế quan và các TH được coi như XK": (invoice, item) => 0,
+    "HH không TH trên tờ khai thuế GTGT": (invoice, item) => 0,
+    "Giảm giá trị hàng nhập kho": (invoice, item) => 0,
+    "Chi phí mua hàng": (invoice, item) => 0,
+    "Phí hàng về kho/Chi phí mua hàng": (invoice, item) => 0,
+    "Phí trước hải quan": (invoice, item) => 0,
+    "Nhóm HHDV mua vào": (invoice, item) => "1",
 
-    // Shared or conditional
+    // Shared or conditional text descriptions
     "Địa chỉ": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_dchi : invoice.nban_dchi,
-    "Diễn giải": (invoice, item) => invoice.type === 'selling' 
+    "Diễn giải": (invoice, item) => invoice.type === 'selling'
         ? `Bán hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`
         : `Mua hàng của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
     "Diễn giải/Lý do chi/Nội dung thanh toán": (invoice, item) => invoice.type === 'selling'
@@ -481,11 +531,14 @@ const valueMapper = {
         : `Giảm giá/Trả lại hàng của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
     "Diễn giải/Lý do nộp": (invoice, item) =>
         `Giảm giá hàng mua của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
+    "Diễn giải phiếu nhập": (invoice, item) =>
+        `Nhập kho hàng từ ${invoice.type === 'selling' ? (invoice.nmua_ten || 'khách hàng') : (invoice.nban_ten || 'nhà cung cấp')} theo hóa đơn số ${invoice.so_hdon}`,
     "Trích yếu": (invoice, item) => invoice.type === 'selling'
         ? `Bán hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`
         : `Mua hàng của ${invoice.nban_ten || 'nhà cung cấp'} theo hóa đơn số ${invoice.so_hdon}`,
     "Lý do xuất": (invoice, item) =>
         `Bán hàng cho ${invoice.nmua_ten || 'khách hàng'} theo hóa đơn số ${invoice.so_hdon}`,
+    "Ghi chú": (invoice, item) => `Hóa đơn số ${invoice.so_hdon}`,
     "Hình thức TT": (invoice, item) => {
         const httt = (invoice.httt || "").toUpperCase();
         if (httt === "TM") return 1; // Tiền mặt
@@ -493,8 +546,9 @@ const valueMapper = {
         return 0; // Chưa thanh toán
     },
 
-    "Loại tiền": (invoice, item) => invoice.dvt_te,
-    "Tỷ giá": (invoice, item) => invoice.dvt_te === "VND" ? 1 : null,
+    // Quantities, Rates & Amounts
+    "Loại tiền": (invoice, item) => invoice.dvt_te || "VND",
+    "Tỷ giá": (invoice, item) => (invoice.dvt_te === "VND" || !invoice.dvt_te) ? 1 : null,
     "Mã hàng (*)": (invoice, item) => item.ma || "HH",
     "Mã hàng": (invoice, item) => item.ma || "HH",
     "Tên hàng": (invoice, item) => item.ten,
@@ -503,16 +557,51 @@ const valueMapper = {
     "ĐVT": (invoice, item) => item.dvt,
     "Đơn vị tính": (invoice, item) => item.dvt,
     "Số lượng": (invoice, item) => item.so_luong,
+    "Số lượng theo ĐVC": (invoice, item) => item.so_luong,
     "Đơn giá": (invoice, item) => item.don_gia,
+    "Đơn giá theo ĐVC": (invoice, item) => item.don_gia,
+    "Đơn giá sau thuế": (invoice, item) => {
+        if (!item.don_gia) return null;
+        const rate = parseTaxRate(item.thue_suat);
+        if (rate && typeof rate === "number") {
+            return Math.round(item.don_gia * (1 + rate));
+        }
+        return item.don_gia;
+    },
     "Thành tiền": (invoice, item) => item.thanh_tien,
     "Thành tiền quy đổi": (invoice, item) => item.thanh_tien,
     "Thành tiền QĐ": (invoice, item) => item.thanh_tien,
+    "Giá trị HĐ": (invoice, item) => invoice.tong_thanh_toan,
+    "Giá trị HĐ quy đổi": (invoice, item) => invoice.tong_thanh_toan,
+
+    // Discounts
+    "Tỷ lệ CK (%)": (invoice, item) => 0,
+    "Tỷ lệ CK": (invoice, item) => 0,
+    "Tiền chiết khấu": (invoice, item) => 0,
+    "Tiền chiết khấu quy đổi": (invoice, item) => 0,
+    "Tiền chiết khấu QĐ": (invoice, item) => 0,
+    "Tiền CK": (invoice, item) => 0,
+    "Tiền CK QĐ": (invoice, item) => 0,
+
+    // Tax fields
     "% thuế GTGT": (invoice, item) => parseTaxRate(item.thue_suat),
     "Tiền thuế GTGT": (invoice, item) => item.tien_thue,
     "Tiền thuế GTGT quy đổi": (invoice, item) => item.tien_thue,
     "Tiền thuế GTGT QĐ": (invoice, item) => item.tien_thue,
+
+    // Cost of Goods Sold details
+    "Đơn giá vốn": (invoice, item) => item.don_gia,
+    "Tiền vốn": (invoice, item) => item.thanh_tien,
+
+    // Dates & Terms
     "Ngày báo giá (*)": (invoice, item) => formatDate(invoice.ngay_lap),
     "Ngày báo giá": (invoice, item) => formatDate(invoice.ngay_lap),
+    "Ngày giao hàng": (invoice, item) => formatDate(invoice.ngay_lap),
+    "Ngày phiếu nhập": (invoice, item) => formatDate(invoice.ngay_lap),
+    "Hiệu lực đến": (invoice, item) => formatDate(invoice.ngay_lap),
+    "Địa điểm giao hàng": (invoice, item) => invoice.type === 'selling' ? invoice.nmua_dchi : invoice.nban_dchi,
+    "Số ngày được nợ": (invoice, item) => 30,
+    "Điều khoản thanh toán": (invoice, item) => "Thanh toán trong 30 ngày",
 };
 
 // Memoize template headers to avoid re-reading the same Excel file repeatedly
@@ -533,6 +622,43 @@ function getTemplateHeaders(templatePath) {
     };
     _templateHeaderCache.set(templatePath, result);
     return result;
+}
+
+/**
+ * Kiểm tra nhanh xem file Excel đã tồn tại có còn là file mẫu MISA hợp lệ
+ * (đúng sheet + đúng tiêu đề cột) hay không.
+ * Nếu file đã bị ghi hỏng do race condition của phiên bản cũ (sheet lạ,
+ * mất header, !ref sai...) thì trả về false → sẽ tạo lại từ template gốc.
+ */
+function isUsableExistingFile(existingPath, templatePath) {
+    try {
+        const { headers: templateHeaders, sheetName: templateSheetName } = getTemplateHeaders(templatePath);
+        if (!templateHeaders || templateHeaders.length === 0) return false;
+
+        const buffer = fs.readFileSync(existingPath);
+        const workbook = xlsx.read(buffer, { type: 'buffer' });
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) return false;
+
+        const sheetName = workbook.SheetNames[0];
+        // Sheet name không khớp → file đã bị hỏng/sửa sai
+        if (sheetName !== templateSheetName) return false;
+
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+        const existingHeaders = rows[0] || [];
+
+        // Header phải đủ dài và khớp ít nhất 60% với template gốc
+        if (existingHeaders.length < 5) return false;
+        let matchCount = 0;
+        const len = Math.min(existingHeaders.length, templateHeaders.length);
+        for (let i = 0; i < len; i++) {
+            if (String(existingHeaders[i] || '') === String(templateHeaders[i] || '')) matchCount++;
+        }
+        const ratio = len > 0 ? matchCount / len : 0;
+        return ratio >= 0.6;
+    } catch (e) {
+        return false;
+    }
 }
 
 // Reusable column autofit utility
@@ -556,13 +682,11 @@ function fillTemplate(invoice, templateFile, templateDir) {
     const templatePath = path.join(templateDir, templateFile);
     const { headers, sheetName } = getTemplateHeaders(templatePath);
 
-    // Build workbook data
-    const rows = [headers];
+    const dataRows = [];
     const items = invoice.items || [];
-    
-    // In case there are no items, write at least one line
+
     const loopItems = items.length > 0 ? items : [{}];
-    
+
     loopItems.forEach(item => {
         const row = headers.map(header => {
             const mapper = valueMapper[header];
@@ -571,17 +695,23 @@ function fillTemplate(invoice, templateFile, templateDir) {
             }
             return null;
         });
-        rows.push(row);
+        dataRows.push(row);
     });
 
-    const newWb = xlsx.utils.book_new();
-    const newWs = xlsx.utils.aoa_to_sheet(rows);
+    const wb = xlsx.readFile(templatePath, { cellStyles: true });
+    const ws = wb.Sheets[sheetName];
 
-    // Dynamic column width autofit
-    newWs['!cols'] = autofitColumns(rows, headers.length);
+    // Ghi dữ liệu trực tiếp ngay dưới dòng tiêu đề (tại Row 2, row index 1)
+    // để không bị đẩy xuống sau hàng trăm dòng trống có sẵn của file mẫu MISA
+    xlsx.utils.sheet_add_aoa(ws, dataRows, { origin: { r: 1, c: 0 } });
 
-    xlsx.utils.book_append_sheet(newWb, newWs, sheetName);
-    return newWb;
+    // Cập nhật lại phạm vi hiển thị (!ref) vừa khít với dữ liệu thực tế
+    ws['!ref'] = xlsx.utils.encode_range({
+        s: { r: 0, c: 0 },
+        e: { r: dataRows.length, c: Math.max(headers.length - 1, 0) }
+    });
+
+    return wb;
 }
 
 /**
@@ -607,6 +737,7 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
     }
 
     // Auto-detect buying vs selling if activeMst is provided
+    const originalType = type;
     if (activeMst) {
         if (invoice.nban_mst === activeMst) {
             type = 'selling';
@@ -615,12 +746,25 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
         }
     }
 
+    // If type changed after auto-detection, adjust templateDir to the correct sibling folder
+    if (type !== originalType) {
+        const parentDir = path.dirname(templateDir);
+        const candidates = (type === 'selling' || type === 'ban-ra') ? ['ban-ra', 'selling'] : ['mua-vao', 'buying'];
+        for (const folder of candidates) {
+            const correctedDir = path.join(parentDir, folder);
+            if (fs.existsSync(correctedDir)) {
+                templateDir = correctedDir;
+                break;
+            }
+        }
+    }
+
     // Set context type so mapper functions can make correct buying/selling decisions
     invoice.type = type;
 
     let best;
     const rankings = classifyInvoice(invoice, type);
-    
+
     if (forceTemplate) {
         const found = rankings.find(t => t.file === forceTemplate);
         if (found) {
@@ -658,28 +802,46 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
     if (!fs.existsSync(finalOutputDir)) {
         fs.mkdirSync(finalOutputDir, { recursive: true });
     }
-    
+
     const xmlFile = path.basename(xmlPath);
-    const outFileName = `${best.file.replace('.xls', '')}.xlsx`;
+    const outFileName = best.file; // Giữ nguyên đuôi .xls
     const outPath = path.join(finalOutputDir, outFileName);
 
     let workbook;
-    if (fs.existsSync(outPath)) {
+    const templatePathForCheck = path.join(templateDir, best.file);
+
+    // Nếu file đích đã tồn tại nhưng KHÔNG còn là file mẫu MISA hợp lệ
+    // (bị hỏng do race condition của phiên bản cũ, sheet lạ, mất header...)
+    // thì tạo LẠI từ template gốc thay vì gộp vào file rác.
+    const existingUsable = fs.existsSync(outPath) && isUsableExistingFile(outPath, templatePathForCheck);
+
+    if (fs.existsSync(outPath) && existingUsable) {
         try {
             // Đọc file Excel đã tồn tại để gộp dữ liệu
             const fileBuffer = fs.readFileSync(outPath);
             workbook = xlsx.read(fileBuffer, { type: 'buffer' });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            
-            // Chuyển dữ liệu của sheet thành mảng 2 chiều
+
+            // Chuyển dữ liệu của sheet thành mảng 2 chiều để lấy headers
             const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
             const headers = rows[0] || [];
-            
+
+            // Tìm dòng có dữ liệu thực sự cuối cùng (bỏ qua các dòng trống của template)
+            let lastDataRow = 0;
+            for (let r = rows.length - 1; r >= 1; r--) {
+                if (rows[r] && rows[r].some(v => v !== null && v !== undefined && String(v).trim() !== '')) {
+                    lastDataRow = r;
+                    break;
+                }
+            }
+            const startRowIndex = lastDataRow + 1;
+
             // Ánh xạ dữ liệu dòng mới
             const items = invoice.items || [];
             const loopItems = items.length > 0 ? items : [{}];
-            
+
+            const dataRows = [];
             loopItems.forEach(item => {
                 const row = headers.map(header => {
                     const mapper = valueMapper[header];
@@ -688,25 +850,30 @@ function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir 
                     }
                     return null;
                 });
-                rows.push(row);
+                dataRows.push(row);
             });
-            
-            // Cập nhật lại sheet với dữ liệu đã gộp
-            const newWs = xlsx.utils.aoa_to_sheet(rows);
-            
-            // Autofit column widths using shared utility
-            newWs['!cols'] = autofitColumns(rows, headers.length);
-            
-            workbook.Sheets[sheetName] = newWs;
+
+            // Cập nhật lại sheet với dữ liệu đã gộp nối tiếp ngay sau dòng dữ liệu cuối cùng
+            xlsx.utils.sheet_add_aoa(worksheet, dataRows, { origin: { r: startRowIndex, c: 0 } });
+
+            // Cập nhật lại phạm vi hiển thị (!ref)
+            worksheet['!ref'] = xlsx.utils.encode_range({
+                s: { r: 0, c: 0 },
+                e: { r: startRowIndex + dataRows.length - 1, c: Math.max(headers.length - 1, 0) }
+            });
         } catch (readErr) {
             console.error(`Lỗi khi đọc/gộp file Excel đã tồn tại ${outPath}, tiến hành ghi mới:`, readErr);
             workbook = fillTemplate(invoice, best.file, templateDir);
         }
     } else {
+        // File chưa tồn tại HOẶC file đã bị hỏng → tạo mới từ template gốc
+        if (fs.existsSync(outPath) && !existingUsable) {
+            console.warn(`File ${outPath} không còn là mẫu MISA hợp lệ (có thể bị hỏng), tạo lại từ template gốc.`);
+        }
         workbook = fillTemplate(invoice, best.file, templateDir);
     }
-    
-    xlsx.writeFile(workbook, outPath);
+
+    xlsx.writeFile(workbook, outPath, { bookType: 'biff8' });
 
     return {
         success: true,

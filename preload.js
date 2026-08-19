@@ -4,6 +4,7 @@ const api = {
   changeDownloadFolder: () => ipcRenderer.invoke('change-download-folder'),
   getDownloadFolder: () => ipcRenderer.invoke('get-download-folder'),
   armDownload: (payload) => ipcRenderer.invoke('arm-download', payload),
+  sendInputEvent: (events) => ipcRenderer.send('send-input-event', events),
   getWidgetIcon: () => ipcRenderer.invoke('get-widget-icon'),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   openFile: (filePath) => ipcRenderer.invoke('open-file', filePath),
@@ -18,6 +19,7 @@ const api = {
   saveAccount: (account) => ipcRenderer.invoke('save-account', account),
   deleteAccount: (id) => ipcRenderer.invoke('delete-account', id),
   importExcelAccounts: () => ipcRenderer.invoke('import-excel-accounts'),
+  downloadAccountTemplate: () => ipcRenderer.invoke('download-account-template'),
   setActiveMst: (mst) => ipcRenderer.invoke('set-active-mst', mst),
   setFolderOrganization: (enabled) => ipcRenderer.invoke('set-organize-folders', enabled),
   getFolderOrganization: () => ipcRenderer.invoke('get-organize-folders'),
@@ -43,7 +45,11 @@ const api = {
     return () => {
       ipcRenderer.removeListener('update-status', listener);
     };
-  }
+  },
+  getHistory: () => ipcRenderer.invoke('get-history'),
+  addHistory: (items) => ipcRenderer.invoke('add-history', items),
+  clearHistory: () => ipcRenderer.invoke('clear-history'),
+  saveCrawledInvoiceXml: (payload) => ipcRenderer.invoke('save-crawled-invoice-xml', payload)
 };
 
 // Expose API cho web page (main world) qua contextBridge
@@ -63,13 +69,14 @@ function initApp() {
   isAppInitialized = true;
 
   class OverlayUI {
-    constructor(onStart, onPause, onStop, onSkip, onRetryFailed, onChangeFolder, initialFolder) {
+    constructor(onStart, onPause, onStop, onSkip, onRetryFailed, onChangeFolder, onContinueReview, initialFolder) {
       this.onStart = onStart;
       this.onPause = onPause;
       this.onStop = onStop;
       this.onSkip = onSkip;
       this.onRetryFailed = onRetryFailed;
       this.onChangeFolder = onChangeFolder;
+      this.onContinueReview = onContinueReview;
 
       this.totalPretax = 0;
       this.totalTax = 0;
@@ -87,6 +94,11 @@ function initApp() {
       this.render(initialFolder);
       document.body.appendChild(this.container);
       this.makeDraggable();
+
+      this.makeModalDraggable('account-modal');
+      this.makeModalDraggable('review-modal');
+      this.makeModalDraggable('detail-modal');
+      this.makeModalDraggable('history-modal');
     }
 
     render(initialFolder) {
@@ -352,18 +364,7 @@ function initApp() {
           .btn-small:active {
             transform: scale(0.98);
           }
-          .confidence-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-          }
-          .confidence-badge.high { background: #e6f4ea; color: #137333; border: 1px solid #ceead6; }
-          .confidence-badge.med { background: #fef7e0; color: #b06000; border: 1px solid #fef0b5; }
-          .confidence-badge.low { background: #fce8e6; color: #c5221f; border: 1px solid #fad2cf; }
+
 
           .filter-tabs {
             display: flex;
@@ -558,7 +559,7 @@ function initApp() {
           .log-item.error { color: #ff4d4f; }
           .log-item.warning { color: #ffc107; }
 
-          /* Toast notification */
+          /* Toast notification - frosted surface matching app panel */
           .toast-container {
             position: fixed;
             top: 20px;
@@ -566,60 +567,150 @@ function initApp() {
             z-index: 1000;
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: 10px;
             pointer-events: none;
           }
           .toast {
             pointer-events: auto;
+            position: relative;
             display: flex;
             align-items: flex-start;
-            gap: 10px;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            color: #e0e0e0;
-            padding: 12px 16px;
-            border-radius: 10px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08);
-            font-size: 13px;
+            gap: 12px;
             min-width: 300px;
             max-width: 420px;
-            animation: toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-            backdrop-filter: blur(12px);
-            border-left: 4px solid #28c76f;
+            padding: 14px 14px 14px 16px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.78);
+            backdrop-filter: blur(20px) saturate(160%);
+            -webkit-backdrop-filter: blur(20px) saturate(160%);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 12px 32px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04);
+            color: #1e293b;
+            font-size: 13px;
+            line-height: 1.5;
+            animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow: hidden;
+          }
+          .toast.type-success { --toast-accent: #16a34a; }
+          .toast.type-error   { --toast-accent: #dc2626; }
+          .toast.type-warning { --toast-accent: #d97706; }
+          .toast.type-info    { --toast-accent: #2563eb; }
+          .toast::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--toast-accent);
+            opacity: 0.9;
           }
           .toast.toast-hiding {
-            animation: toastSlideOut 0.35s cubic-bezier(0.55, 0, 1, 0.45) forwards;
+            animation: toastSlideOut 0.28s cubic-bezier(0.55, 0, 1, 0.45) forwards;
           }
-          .toast-icon { font-size: 20px; flex-shrink: 0; }
-          .toast-body { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-          .toast-msg { font-weight: 500; line-height: 1.4; }
-          .toast-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+          .toast-icon {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            margin-top: 1px;
+            border-radius: 9px;
+            background: color-mix(in srgb, var(--toast-accent) 12%, transparent);
+            color: var(--toast-accent);
+          }
+          .toast-icon svg {
+            width: 17px;
+            height: 17px;
+          }
+          .toast-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+          }
+          .toast-title {
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            color: #0f172a;
+          }
+          .toast-msg {
+            font-weight: 400;
+            color: #475569;
+            white-space: pre-line;
+            word-break: break-word;
+          }
+          .toast-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+          }
           .toast-btn {
-            padding: 5px 12px;
-            border-radius: 6px;
-            border: none;
-            font-size: 11px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            font-size: 12px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: background 0.15s ease, transform 0.1s ease;
+          }
+          .toast-btn:active {
+            transform: scale(0.98);
           }
           .toast-btn-primary {
-            background: linear-gradient(135deg, #28c76f 0%, #1fa85c 100%);
-            color: white;
-          }
-          .toast-btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(40, 199, 111, 0.35);
-          }
-          .toast-btn-dismiss {
-            background: rgba(255,255,255,0.12);
-            color: #d0d0d0;
-          }
-          .toast-btn-dismiss:hover {
-            background: rgba(255,255,255,0.22);
+            background: #0052cc;
             color: #ffffff;
           }
-          @keyframes toastSlideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-          @keyframes toastSlideOut { from { transform: translateX(0); opacity: 1; } to { transform: translateX(120%); opacity: 0; } }
+          .toast-btn-primary:hover {
+            background: #0040a3;
+          }
+          .toast-btn-ghost {
+            background: transparent;
+            color: #475569;
+            border-color: rgba(15, 23, 42, 0.12);
+          }
+          .toast-btn-ghost:hover {
+            background: rgba(15, 23, 42, 0.05);
+            color: #1e293b;
+          }
+          .toast-close {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            margin: -4px -4px 0 0;
+            border: none;
+            border-radius: 7px;
+            background: transparent;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+          }
+          .toast-close:hover {
+            background: rgba(15, 23, 42, 0.06);
+            color: #334155;
+          }
+          .toast-close svg {
+            width: 13px;
+            height: 13px;
+          }
+          @keyframes toastSlideIn {
+            from { transform: translateY(-8px) scale(0.98); opacity: 0; }
+            to   { transform: translateY(0) scale(1); opacity: 1; }
+          }
+          @keyframes toastSlideOut {
+            from { transform: translateY(0) scale(1); opacity: 1; }
+            to   { transform: translateY(-8px) scale(0.98); opacity: 0; }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .toast, .toast.toast-hiding { animation: none; }
+          }
 
           /* Update banner */
           .update-banner {
@@ -712,6 +803,7 @@ function initApp() {
               <input type="hidden" id="account-select" value="">
               <button class="btn-small" id="btn-fill-account" title="Điền form">Điền form</button>
               <button class="btn-small" id="btn-manage-accounts" title="Quản lý">Quản lý</button>
+              <button class="btn-small" id="btn-history" title="Lịch sử tải">Lịch sử</button>
             </div>
 
             <div class="folder-section">
@@ -788,6 +880,13 @@ function initApp() {
               </button>
             </div>
 
+            <!-- Continue Bar for Format / Template Selection Modal -->
+            <div id="continue-bar" style="display: none; margin-bottom: 8px;">
+              <button class="btn-action" id="btn-continue-review" style="background: linear-gradient(135deg, #0052cc, #007aff); color: white; width: 100%; padding: 10px 8px; font-size: 13px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 82, 204, 0.3); display: flex; align-items: center; justify-content: center; gap: 6px;">
+                <span>➡️</span> <span>Tiếp tục chọn mẫu Excel (<span id="lbl-pending-review-count">0</span> HĐ)</span>
+              </button>
+            </div>
+
             <!-- Action Controls -->
             <div class="actions">
               <button class="btn-action btn-start" id="btn-start" title="Tải về"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Tải về</button>
@@ -810,7 +909,7 @@ function initApp() {
         <!-- Account Modal -->
         <div id="account-modal" class="modal">
           <div class="modal-content">
-            <div style="font-weight: bold; margin-bottom: 5px;">Quản lý tài khoản</div>
+            <div class="modal-header" style="font-weight: bold; margin-bottom: 5px; padding: 5px 0;">Quản lý tài khoản</div>
             <input type="text" id="acc-mst" placeholder="Mã số thuế" />
             <input type="password" id="acc-pwd" placeholder="Mật khẩu" />
             <input type="text" id="acc-name" placeholder="Tên công ty (tùy chọn)" />
@@ -820,8 +919,11 @@ function initApp() {
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
               <div style="font-weight: bold; font-size: 11px;">Danh sách đã lưu:</div>
-              <button class="btn-small" id="btn-import-excel" style="background: #0052cc;">Nhập Excel</button>
-              <button class="btn-small" id="btn-export-excel" style="background: #28c76f;">Xuất Excel</button>
+              <div style="display: flex; gap: 4px;">
+                <button class="btn-small" id="btn-download-template" style="background: #ff9f43;" title="Tải mẫu Excel để nhập tài khoản">Mẫu Excel</button>
+                <button class="btn-small" id="btn-import-excel" style="background: #0052cc;" title="Nhập danh sách tài khoản từ file Excel">Nhập Excel</button>
+                <button class="btn-small" id="btn-export-excel" style="background: #28c76f;" title="Xuất danh sách tài khoản ra file Excel">Xuất Excel</button>
+              </div>
             </div>
             <ul id="acc-list" class="acc-list"></ul>
           </div>
@@ -830,10 +932,10 @@ function initApp() {
         <!-- Review Modal with Confidence Badges, Bulk Edit, Quick Filters -->
         <div id="review-modal" class="modal">
           <div class="modal-content">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <div>
-                <div style="font-weight: bold; font-size: 15px; color: #0052cc;">Xác nhận Mẫu Excel & Độ Tin Cậy Gợi Ý</div>
-                <div style="font-size: 11px; color: #5a6a85;">Kiểm tra độ tin cậy gợi ý và chọn mẫu phù hợp trước khi xuất MISA.</div>
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; padding: 5px 0;">
+              <div style="pointer-events: none;">
+                <div style="font-weight: bold; font-size: 15px; color: #0052cc;">Xác nhận Mẫu Excel MISA</div>
+                <div style="font-size: 11px; color: #5a6a85;">Kiểm tra và chọn mẫu phù hợp trước khi xuất MISA.</div>
               </div>
               <span class="version-badge" id="review-count-badge" style="background: #0052cc; color: white; font-size: 11px; padding: 4px 10px;">0 hóa đơn</span>
             </div>
@@ -843,7 +945,6 @@ function initApp() {
               <div class="filter-tab active" data-filter="all">Tất cả (<span id="cnt-all">0</span>)</div>
               <div class="filter-tab" data-filter="goods">📦 Hàng hóa (<span id="cnt-goods">0</span>)</div>
               <div class="filter-tab" data-filter="services">🛠 Dịch vụ (<span id="cnt-services">0</span>)</div>
-              <div class="filter-tab" data-filter="review">⚠️ Cần xem xét (<span id="cnt-review">0</span>)</div>
             </div>
 
             <!-- Bulk Edit Toolbar -->
@@ -864,7 +965,7 @@ function initApp() {
                     <th style="width: 40px;">STT</th>
                     <th style="width: 95px;">Số HĐ</th>
                     <th style="min-width: 160px;">Đối tác</th>
-                    <th style="width: 120px;">Độ tin cậy</th>
+
                     <th style="min-width: 280px; width: 38%;">Mẫu Excel MISA đã chọn</th>
                     <th style="width: 55px; text-align: center;">Xem</th>
                   </tr>
@@ -886,14 +987,44 @@ function initApp() {
         <!-- Detail Modal for Quick View -->
         <div id="detail-modal" class="modal">
           <div class="modal-content" style="width: 90%; max-width: 780px; height: 80vh; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e4e7ed; padding-bottom: 8px;">
-              <div>
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e4e7ed; padding-bottom: 8px;">
+              <div style="pointer-events: none;">
                 <div style="font-weight: bold; font-size: 16px; color: #0052cc;" id="detail-modal-title">Chi Tiết Hóa Đơn</div>
                 <div style="font-size: 12px; color: #5a6a85;" id="detail-modal-subtitle"></div>
               </div>
               <button class="btn-small" id="btn-close-detail" style="background: #6c757d;">✕ Đóng</button>
             </div>
             <div id="detail-modal-body" style="flex: 1; overflow-y: auto; padding-top: 10px;"></div>
+          </div>
+        </div>
+
+        <!-- History Modal -->
+        <div id="history-modal" class="modal">
+          <div class="modal-content" style="width: 90%; max-width: 850px; height: 85vh; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #e4e7ed; padding-bottom: 8px;">
+               <div style="pointer-events: none;">
+                 <div style="font-weight: bold; font-size: 16px; color: #0052cc;">Lịch Sử Tải & Xuất MISA</div>
+                 <div style="font-size: 12px; color: #5a6a85;">Danh sách các lần tải & xuất hóa đơn.</div>
+               </div>
+               <div style="display: flex; gap: 8px;">
+                 <button class="btn-small" id="btn-clear-history" style="background: #ea5455;">Xóa lịch sử</button>
+                 <button class="btn-small" id="btn-close-history" style="background: #6c757d;">Đóng</button>
+               </div>
+            </div>
+            <div style="flex:1; overflow-y: auto;">
+               <table class="detail-table" style="width: 100%;">
+                  <thead>
+                     <tr>
+                        <th style="width: 170px; text-align: left;">Thời gian tải</th>
+                        <th style="width: 90px; text-align: left;">Loại HĐ</th>
+                        <th style="text-align: center; width: 100px;">Số lượng</th>
+                        <th style="text-align: right; width: 150px;">Tổng giá trị</th>
+                        <th style="text-align: center; width: 100px;">Thao tác</th>
+                     </tr>
+                  </thead>
+                  <tbody id="history-tbody"></tbody>
+               </table>
+            </div>
           </div>
         </div>
       `;
@@ -920,6 +1051,14 @@ function initApp() {
       this.btnRetryFailed = this.shadow.getElementById('btn-retry-failed');
       this.retryBar = this.shadow.getElementById('retry-bar');
       this.lblFailedCount = this.shadow.getElementById('lbl-failed-count');
+
+      this.continueBar = this.shadow.getElementById('continue-bar');
+      this.btnContinueReview = this.shadow.getElementById('btn-continue-review');
+      this.lblPendingReviewCount = this.shadow.getElementById('lbl-pending-review-count');
+
+      this.btnContinueReview.addEventListener('click', () => {
+        if (this.onContinueReview) this.onContinueReview();
+      });
 
       // Update UI elements
       this.updateBanner = this.shadow.getElementById('update-banner');
@@ -1010,11 +1149,35 @@ function initApp() {
 
       this.btnFillAccount = this.shadow.getElementById('btn-fill-account');
       this.btnManageAccounts = this.shadow.getElementById('btn-manage-accounts');
+      this.btnHistory = this.shadow.getElementById('btn-history');
+      this.historyModal = this.shadow.getElementById('history-modal');
+      this.btnCloseHistory = this.shadow.getElementById('btn-close-history');
+      this.btnClearHistory = this.shadow.getElementById('btn-clear-history');
+      this.historyTbody = this.shadow.getElementById('history-tbody');
+
       this.accountModal = this.shadow.getElementById('account-modal');
       this.btnCloseAcc = this.shadow.getElementById('btn-close-acc');
       this.btnSaveAcc = this.shadow.getElementById('btn-save-acc');
+      this.btnDownloadTemplate = this.shadow.getElementById('btn-download-template');
       this.btnImportExcel = this.shadow.getElementById('btn-import-excel');
       this.accList = this.shadow.getElementById('acc-list');
+
+      this.btnHistory.addEventListener('click', async () => {
+        const history = await window.electronAPI.getHistory();
+        this.renderHistory(history);
+        this.historyModal.style.display = 'flex';
+      });
+
+      this.btnCloseHistory.addEventListener('click', () => {
+        this.historyModal.style.display = 'none';
+      });
+
+      this.btnClearHistory.addEventListener('click', async () => {
+        if (confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử tải xuống?')) {
+          await window.electronAPI.clearHistory();
+          this.renderHistory([]);
+        }
+      });
 
       this.accounts = [];
 
@@ -1025,6 +1188,35 @@ function initApp() {
 
       this.btnCloseAcc.addEventListener('click', () => {
         this.accountModal.style.display = 'none';
+      });
+
+      this.btnDownloadTemplate.addEventListener('click', async () => {
+        this.btnDownloadTemplate.textContent = '...';
+        this.btnDownloadTemplate.disabled = true;
+        try {
+          const res = await window.electronAPI.downloadAccountTemplate();
+          if (res.success) {
+            this.showToast('Tải mẫu Excel thành công!', {
+              actions: [
+                {
+                  label: '📂 Mở file',
+                  onClick: () => window.electronAPI.openFile(res.filePath)
+                },
+                {
+                  label: '📁 Mở thư mục',
+                  onClick: () => window.electronAPI.openFolder(res.dirPath)
+                }
+              ]
+            });
+          } else if (res.reason !== 'canceled') {
+            this.showToast(`Lỗi: ${res.reason}`, { type: 'error' });
+          }
+        } catch (e) {
+          this.showToast(`Lỗi: ${e.message}`, { type: 'error' });
+        } finally {
+          this.btnDownloadTemplate.textContent = 'Mẫu Excel';
+          this.btnDownloadTemplate.disabled = false;
+        }
       });
 
       this.btnImportExcel.addEventListener('click', async () => {
@@ -1204,6 +1396,134 @@ function initApp() {
       }
     }
 
+    renderHistory(rawHistory) {
+      if (!rawHistory || rawHistory.length === 0) {
+        this.historyTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #909399; padding: 20px;">Chưa có lịch sử xuất MISA</td></tr>';
+        return;
+      }
+
+      // Phân loại / chuẩn hóa dữ liệu theo từng lần tải (Batch sessions)
+      const sessions = [];
+      const legacyItems = [];
+
+      rawHistory.forEach(item => {
+        if (item.invoices && Array.isArray(item.invoices)) {
+          sessions.push(item);
+        } else if (item.invoiceNumber) {
+          legacyItems.push(item);
+        }
+      });
+
+      // Tự động nhóm các bản ghi cũ chưa có session theo phút tải
+      if (legacyItems.length > 0) {
+        const groups = new Map();
+        legacyItems.forEach(item => {
+          const dateKey = (item.exportDate || '').substring(0, 16);
+          if (!groups.has(dateKey)) groups.set(dateKey, []);
+          groups.get(dateKey).push(item);
+        });
+
+        groups.forEach((items, dateKey) => {
+          const first = items[0];
+          sessions.push({
+            id: 'legacy_' + dateKey.replace(/[^a-zA-Z0-9]/g, '_'),
+            exportDate: first.exportDate || new Date().toISOString(),
+            invoiceType: first.invoiceType || 'buying',
+            totalInvoices: items.length,
+            totalAmount: items.reduce((sum, i) => sum + (i.totalAmount || 0), 0),
+            invoices: items.map(i => ({
+              invoiceType: i.invoiceType,
+              invoiceNumber: i.invoiceNumber,
+              ngayLap: i.ngayLap,
+              partnerName: i.partnerName,
+              totalAmount: i.totalAmount,
+              templateName: i.templateName || ''
+            }))
+          });
+        });
+      }
+
+      // Sắp xếp các lần tải mới nhất lên đầu
+      sessions.sort((a, b) => new Date(b.exportDate) - new Date(a.exportDate));
+
+      this.historyTbody.innerHTML = sessions.map(session => {
+        const dateStr = new Date(session.exportDate).toLocaleString('vi-VN');
+        const typeBadge = session.invoiceType === 'selling'
+          ? '<span style="color: #ff9f43; font-weight: 600;">Bán ra</span>'
+          : '<span style="color: #28c76f; font-weight: 600;">Mua vào</span>';
+
+        const subRows = (session.invoices || []).map((inv, idx) => `
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 5px 8px; text-align: center; color: #64748b;">${idx + 1}</td>
+            <td style="padding: 5px 8px; font-weight: 600; color: #0052cc;">${inv.invoiceNumber || 'N/A'}</td>
+            <td style="padding: 5px 8px;">${inv.ngayLap || 'N/A'}</td>
+            <td style="padding: 5px 8px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${inv.partnerName || ''}">${inv.partnerName || 'N/A'}</td>
+            <td style="padding: 5px 8px; text-align: right; color: #28c76f; font-weight: 600;">${formatCurrency(inv.totalAmount)}</td>
+          </tr>
+        `).join('');
+
+        return `
+          <tr class="history-session-header" data-session-id="${session.id}" style="cursor: pointer; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+            <td style="font-weight: 600; color: #1e293b; user-select: none;">
+              <span class="icon-toggle" id="icon-toggle-${session.id}" style="display: inline-block; width: 14px; transition: transform 0.2s;">▶</span> ${dateStr}
+            </td>
+            <td>${typeBadge}</td>
+            <td style="text-align: center;">
+              <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 10px; font-weight: 600; font-size: 11px;">${session.totalInvoices} HĐ</span>
+            </td>
+            <td style="text-align: right; color: #0052cc; font-weight: bold;">
+              ${formatCurrency(session.totalAmount)}
+            </td>
+            <td style="text-align: center;">
+              <button class="btn-small btn-toggle-session" data-session-id="${session.id}" style="padding: 3px 8px; font-size: 11px; background: #0052cc;">👁 Xem list</button>
+            </td>
+          </tr>
+          <tr class="history-session-detail" id="detail-session-${session.id}" style="display: none; background: #ffffff;">
+            <td colspan="5" style="padding: 10px 12px; background: #f1f5f9;">
+              <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
+                <div style="font-weight: 600; color: #334155; margin-bottom: 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+                  <span>📋 Danh sách ${session.totalInvoices} hóa đơn thuộc lần tải (${dateStr})</span>
+                  <span style="color: #64748b; font-weight: normal; font-size: 11px;">Tổng tiền: <b style="color: #28c76f;">${formatCurrency(session.totalAmount)}</b></span>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                  <thead>
+                    <tr style="background: #e2e8f0; color: #475569; font-weight: 600;">
+                      <th style="padding: 6px 8px; text-align: center; width: 35px;">STT</th>
+                      <th style="padding: 6px 8px; text-align: left; width: 95px;">Số HĐ</th>
+                      <th style="padding: 6px 8px; text-align: left; width: 90px;">Ngày lập</th>
+                      <th style="padding: 6px 8px; text-align: left;">Đối tác</th>
+                      <th style="padding: 6px 8px; text-align: right; width: 120px;">Tổng tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${subRows}
+                  </tbody>
+                </table>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+      // Sự kiện click đóng/mở từng lần tải
+      this.historyTbody.onclick = (e) => {
+        const headerRow = e.target.closest('.history-session-header');
+        if (headerRow) {
+          const sessionId = headerRow.dataset.sessionId;
+          const detailRow = this.shadow.getElementById(`detail-session-${sessionId}`);
+          const iconToggle = this.shadow.getElementById(`icon-toggle-${sessionId}`);
+          const btnToggle = headerRow.querySelector('.btn-toggle-session');
+
+          if (detailRow) {
+            const isHidden = detailRow.style.display === 'none';
+            detailRow.style.display = isHidden ? 'table-row' : 'none';
+            if (iconToggle) iconToggle.textContent = isHidden ? '▼' : '▶';
+            if (btnToggle) btnToggle.textContent = isHidden ? '▲ Thu gọn' : '👁 Xem list';
+          }
+        }
+      };
+    }
+
     renderAccountList() {
       this.accList.innerHTML = '';
       const frag = document.createDocumentFragment();
@@ -1329,6 +1649,15 @@ function initApp() {
       }
     }
 
+    showContinueBar(pendingCount) {
+      if (pendingCount > 0) {
+        this.continueBar.style.display = 'block';
+        this.lblPendingReviewCount.textContent = pendingCount;
+      } else {
+        this.continueBar.style.display = 'none';
+      }
+    }
+
     log(msg, type = 'normal') {
       const el = document.createElement('div');
       el.className = `log-item ${type}`;
@@ -1340,7 +1669,7 @@ function initApp() {
       this.logContainer.scrollTop = this.logContainer.scrollHeight;
     }
 
-    showToast(message, { actions = [], autoDismissMs = 12000, type = 'success' } = {}) {
+    showToast(message, { actions = [], autoDismissMs = 3000, type = 'success' } = {}) {
       let toastContainer = this.shadow.querySelector('.toast-container');
       if (!toastContainer) {
         toastContainer = document.createElement('div');
@@ -1349,28 +1678,47 @@ function initApp() {
       }
 
       const toast = document.createElement('div');
-      toast.className = 'toast';
+      toast.className = `toast type-${type}`;
 
-      // Phân biệt icon & màu viền theo loại thông báo
+      // Icon SVG inline theo loại thông báo (không dùng emoji)
       const typeConfig = {
-        success: { icon: '✅', borderColor: '#28c76f' },
-        error: { icon: '❌', borderColor: '#ea5455' },
-        warning: { icon: '⚠️', borderColor: '#ff9f43' },
-        info: { icon: 'ℹ️', borderColor: '#007aff' }
+        success: {
+          title: 'Thành công',
+          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+        },
+        error: {
+          title: 'Có lỗi xảy ra',
+          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
+        },
+        warning: {
+          title: 'Cảnh báo',
+          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+        },
+        info: {
+          title: 'Thông báo',
+          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+        }
       };
       const config = typeConfig[type] || typeConfig.success;
-      toast.style.borderLeftColor = config.borderColor;
 
       const actionsHtml = actions.map((act, i) =>
-        `<button class="toast-btn ${act.primary !== false ? 'toast-btn-primary' : 'toast-btn-dismiss'}" id="toast-act-${i}">${act.label}</button>`
-      ).join('') + `<button class="toast-btn toast-btn-dismiss" id="toast-dismiss">Đóng</button>`;
+        `<button class="toast-btn ${act.primary !== false ? 'toast-btn-primary' : 'toast-btn-ghost'}" id="toast-act-${i}">${act.label}</button>`
+      ).join('');
+
+      const actionsSection = actions.length > 0
+        ? `<div class="toast-actions">${actionsHtml}</div>`
+        : '';
 
       toast.innerHTML = `
-        <span class="toast-icon">${config.icon}</span>
+        <span class="toast-icon">${config.svg}</span>
         <div class="toast-body">
-          <div class="toast-msg" style="white-space: pre-line;">${message}</div>
-          <div class="toast-actions">${actionsHtml}</div>
+          <div class="toast-title">${config.title}</div>
+          <div class="toast-msg">${message}</div>
+          ${actionsSection}
         </div>
+        <button class="toast-close" id="toast-dismiss" title="Đóng">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
       `;
 
       // Giới hạn tối đa 3 toast hiển thị cùng lúc để tránh che kín màn hình
@@ -1477,11 +1825,10 @@ function initApp() {
         let newTop = e.clientY - offsetY;
 
         const rect = this.container.getBoundingClientRect();
-        const maxLeft = window.innerWidth - rect.width;
-        const maxTop = window.innerHeight - rect.height;
 
-        newLeft = Math.max(0, Math.min(newLeft, maxLeft));
-        newTop = Math.max(0, Math.min(newTop, maxTop));
+        // Cho phép drag tự do hơn, chỉ giữ lại một phần nhỏ (40px) trên màn hình để không bị mất
+        newLeft = Math.max(-rect.width + 40, Math.min(newLeft, window.innerWidth - 40));
+        newTop = Math.max(0, Math.min(newTop, window.innerHeight - 40));
 
         this.container.style.left = `${newLeft}px`;
         this.container.style.top = `${newTop}px`;
@@ -1490,6 +1837,62 @@ function initApp() {
       });
 
       document.addEventListener('mouseup', () => { isDragging = false; });
+    }
+
+    makeModalDraggable(modalId) {
+      const modal = this.shadow.getElementById(modalId);
+      if (!modal) return;
+      const content = modal.querySelector('.modal-content');
+      const header = modal.querySelector('.modal-header');
+      if (!content || !header) return;
+
+      content.style.position = 'relative';
+      header.style.cursor = 'grab';
+
+      let isDragging = false;
+      let startX, startY;
+      let currentLeft = 0, currentTop = 0;
+
+      header.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (['BUTTON', 'INPUT', 'SELECT'].includes(e.target.tagName) || e.target.closest('button, input, select')) return;
+
+        isDragging = true;
+        header.style.cursor = 'grabbing';
+
+        currentLeft = parseInt(content.style.left) || 0;
+        currentTop = parseInt(content.style.top) || 0;
+
+        startX = e.clientX - currentLeft;
+        startY = e.clientY - currentTop;
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+
+        let newLeft = e.clientX - startX;
+        let newTop = e.clientY - startY;
+
+        content.style.left = `${newLeft}px`;
+        content.style.top = `${newTop}px`;
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (isDragging) {
+          isDragging = false;
+          header.style.cursor = 'grab';
+        }
+      });
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.attributeName === 'style' && modal.style.display === 'none') {
+            content.style.left = '0px';
+            content.style.top = '0px';
+          }
+        });
+      });
+      observer.observe(modal, { attributes: true });
     }
   }
 
@@ -1524,6 +1927,7 @@ function initApp() {
           this.skipRow.bind(this),
           this.retryFailedRows.bind(this),
           this.changeFolder.bind(this),
+          this.showReviewModal.bind(this),
           folder
         );
 
@@ -1539,6 +1943,22 @@ function initApp() {
         this.ui.updateFolder(folder);
         this.ui.log(`Đã đổi thư mục lưu: ${folder}`);
       }
+    }
+
+    detectTaxWebsiteInvoiceType() {
+      try {
+        const activeTab = document.querySelector('.ant-menu-item-selected, .ant-tabs-tab-active, .active-menu, .ant-menu-item-active');
+        const heading = document.querySelector('.ant-page-header-heading-title, h1, h2, .page-title, .ant-breadcrumb');
+        const text = ((activeTab ? activeTab.innerText : '') + ' ' + (heading ? heading.innerText : '') + ' ' + document.title + ' ' + window.location.href).toLowerCase();
+
+        if (text.includes('bán ra') || text.includes('ban-ra') || text.includes('ban_ra') || text.includes('hóa đơn bán')) {
+          return 'selling';
+        }
+        if (text.includes('mua vào') || text.includes('mua-vao') || text.includes('mua_vao') || text.includes('hóa đơn mua')) {
+          return 'buying';
+        }
+      } catch (e) { /* ignore */ }
+      return null;
     }
 
     skipRow() {
@@ -1575,6 +1995,22 @@ function initApp() {
       this.pendingReviews = [];
       this.ui.resetFinancials();
       this.ui.showRetryBar(0);
+      this.ui.showContinueBar(0);
+
+      // Tự động nhận diện loại hóa đơn Mua vào / Bán ra dựa trên tab đang mở trên web Thuế
+      const autoType = this.detectTaxWebsiteInvoiceType();
+      if (autoType) {
+        if (autoType === 'selling') {
+          const rad = this.ui.shadow.getElementById('rad-invoice-selling');
+          if (rad) rad.checked = true;
+          this.ui.log('ℹ️ Tự động khớp tab Thuế: Hóa đơn Bán ra', 'info');
+        } else if (autoType === 'buying') {
+          const rad = this.ui.shadow.getElementById('rad-invoice-buying');
+          if (rad) rad.checked = true;
+          this.ui.log('ℹ️ Tự động khớp tab Thuế: Hóa đơn Mua vào', 'info');
+        }
+      }
+
       this.ui.log('Bắt đầu quy trình tải siêu tốc...');
 
       this.currentPage = 1;
@@ -1611,7 +2047,17 @@ function initApp() {
           this.ui.log('Hoàn tất tải toàn bộ hóa đơn!', 'success');
 
           if (this.pendingReviews.length > 0) {
-            this.showReviewModal();
+            this.ui.showContinueBar(this.pendingReviews.length);
+            this.ui.showToast(
+              `Đã tải xong ${this.pendingReviews.length} hóa đơn!\nBấm "Tiếp tục" để chọn mẫu Excel MISA hoặc tải lại các dòng lỗi (nếu có).`,
+              {
+                actions: [{
+                  label: '➡️ Tiếp tục chọn mẫu',
+                  onClick: () => this.showReviewModal()
+                }],
+                autoDismissMs: 15000
+              }
+            );
           } else {
             const folder = await window.electronAPI.getDownloadFolder();
             this.ui.showToast(
@@ -1631,11 +2077,24 @@ function initApp() {
           this.setState('STOPPED');
           this.ui.log('Đã dừng bởi người dùng.', 'warning');
           if (this.pendingReviews.length > 0) {
-            this.showReviewModal();
+            this.ui.showContinueBar(this.pendingReviews.length);
+            this.ui.showToast(
+              `Đã dừng tải. Đã tải được ${this.pendingReviews.length} hóa đơn.\nBấm "Tiếp tục" để chọn mẫu Excel MISA hoặc tải lại các dòng lỗi.`,
+              {
+                actions: [{
+                  label: '➡️ Tiếp tục chọn mẫu',
+                  onClick: () => this.showReviewModal()
+                }],
+                autoDismissMs: 15000
+              }
+            );
           }
         } else {
           this.setState('FAILED');
           this.ui.log(`Lỗi: ${e.message}`, 'error');
+          if (this.pendingReviews.length > 0) {
+            this.ui.showContinueBar(this.pendingReviews.length);
+          }
         }
       }
     }
@@ -1652,17 +2111,83 @@ function initApp() {
     }
 
     isElementVisibleAndEnabled(el) {
-      const style = window.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      if (!el) return false;
+      // Kiểm tra chính element VÀ tất cả các ancestor — khi chuyển tab Mua vào ↔ Bán ra,
+      // tab trước thường bị ẩn qua container (display:none, visibility:hidden, opacity:0)
+      // chứ không phải bản thân element con → cần duyệt toàn bộ cây cha.
+      let node = el;
+      while (node && node !== document.documentElement) {
+        const style = window.getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+        if (node.hasAttribute('hidden') || node.getAttribute('aria-hidden') === 'true') return false;
+        node = node.parentElement;
+      }
+      if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' || el.classList.contains('disabled')) return false;
       const rect = el.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return false;
-      if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true' || el.classList.contains('disabled')) return false;
       return true;
+    }
+
+    // Chỉ lấy các dòng hóa đơn ĐANG HIỂN THỊ. Quan trọng khi chuyển tab Mua vào / Bán ra:
+    // DOM của tab trước có thể vẫn còn trong trang (bảng ẩn) — nếu click vào dòng ẩn
+    // thì không mở được chi tiết hóa đơn và automation "treo" không tải được.
+    getVisibleInvoiceRows() {
+      const allRows = Array.from(document.querySelectorAll(this.selectors.invoiceRows));
+      return allRows.filter(r => this.isElementVisibleAndEnabled(r));
+    }
+
+    // Gửi "cú click chuột thật" (trusted input event) qua main process.
+    // Ant Design Table thường bỏ qua synthetic click (dispatchEvent) ngay sau khi
+    // chuyển tab Mua vào ↔ Bán ra → Electron webContents.sendInputEvent tạo event
+    // có isTrusted=true, giống hệt người dùng bấm chuột thật → automation không bị treo.
+    async sendNativeClick(el) {
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const cx = Math.round(rect.left + rect.width / 2);
+      const cy = Math.round(rect.top + rect.height / 2);
+      try {
+        await window.electronAPI.sendInputEvent([
+          { type: 'mouseDown', x: cx, y: cy, button: 'left', clickCount: 1 },
+          { type: 'mouseUp', x: cx, y: cy, button: 'left', clickCount: 1 }
+        ]);
+      } catch (e) { /* ignore */ }
+    }
+
+    // Bấm dòng bằng native mouse events (pointerdown/mousedown/mouseup/click) +
+    // trusted input event. Ant Design Table nhiều khi bỏ qua .click() thông thường
+    // hoặc chưa gắn listener ngay sau khi chuyển tab → cần dispatch event đầy đủ
+    // trên cell thực sự và gửi trusted click qua main process.
+    clickRow(row) {
+      if (!row) return;
+      const target = row.closest('tr') || row;
+      const firstCell = target.querySelector('td');
+      const clickTarget = firstCell || target;
+
+      ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(type => {
+        clickTarget.dispatchEvent(new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          button: 0,
+          buttons: 1
+        }));
+      });
+
+      // Fallback nếu framework dùng onclick trực tiếp
+      try { if (typeof target.click === 'function') target.click(); } catch (e) { /* ignore */ }
+      try { if (clickTarget !== target && typeof clickTarget.click === 'function') clickTarget.click(); } catch (e) { /* ignore */ }
+
+      // Trusted input event gửi qua main process — quan trọng sau khi chuyển tab
+      this.sendNativeClick(clickTarget);
     }
 
     async processCurrentPage(signal) {
       this.setState('READING_ROWS');
-      const rows = Array.from(document.querySelectorAll(this.selectors.invoiceRows));
+      // CHỈ đếm các dòng ĐANG HIỂN THỊ. Khi chuyển tab Mua vào / Bán ra, DOM của tab
+      // trước vẫn còn trong trang (bảng ẩn) → nếu lấy tất cả sẽ click nhầm dòng ẩn,
+      // không mở được chi tiết hóa đơn và automation "đứng hình" không tải được.
+      const rows = this.getVisibleInvoiceRows();
       const totalRows = rows.length;
 
       if (totalRows === 0) {
@@ -1683,7 +2208,8 @@ function initApp() {
 
         this.ui.updateStats(i, totalRows, this.successCount, this.failureCount, this.currentPage);
 
-        const currentRows = Array.from(document.querySelectorAll(this.selectors.invoiceRows));
+        // Luôn query lại dòng theo index để tránh dùng tham chiếu DOM cũ/ẩn
+        const currentRows = this.getVisibleInvoiceRows();
         const currentRow = currentRows[i];
         if (!currentRow) {
           this.ui.log(`Cảnh báo: Dòng ${i + 1} không tồn tại`, 'warning');
@@ -1758,12 +2284,31 @@ function initApp() {
         }
       }
       this.ui.showRetryBar(this.failedRows.length);
+      if (this.pendingReviews.length > 0) {
+        this.ui.showContinueBar(this.pendingReviews.length);
+      }
     }
 
     async downloadRow(row, index, signal, skipSignal) {
+      try {
+        return await this.downloadRowViaXml(row, index, signal, skipSignal);
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          throw err;
+        }
+        this.ui.log(`⚠️ Dòng ${index + 1}: Tải XML gặp lỗi (${err.message}). Đang chuyển sang xem hóa đơn & crawl dữ liệu...`, 'warning');
+        return await this.downloadRowViaModalCrawl(row, index, signal, skipSignal);
+      }
+    }
+
+    async downloadRowViaXml(row, index, signal, skipSignal) {
       this.setState('SELECTING_ROW');
       row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      row.click();
+
+      // Bấm dòng bằng native mouse events (clickRow) — .click() thông thường có thể
+      // bị Ant Design bỏ qua ngay sau khi chuyển tab. Click lặp lại cho tới khi
+      // nút tải XML xuất hiện (thời gian tối đa ~6s).
+      this.clickRow(row);
 
       await new Promise((r, reject) => {
         const t = setTimeout(r, this.behavior.selectionDelayMs);
@@ -1772,22 +2317,92 @@ function initApp() {
       });
 
       this.setState('WAITING_FOR_DOWNLOAD_BUTTON');
-      let dlBtn = null;
 
-      const icons = Array.from(document.querySelectorAll('g#icon_ketxuat, svg path[d^="M10.54"]'));
-      if (icons.length > 0) {
-        dlBtn = icons[icons.length - 1].closest('button');
-      }
+      const findDownloadButton = () => {
+        // Chỉ xét các nút ĐANG HIỂN THỊ — khi chuyển tab Mua vào ↔ Bán ra, DOM của tab
+        // trước vẫn còn trong trang (ẩn qua container) và nút tải XML của tab cũ có thể
+        // vẫn tồn tại → nếu lấy nút đó sẽ click nhầm vào tab ẩn và không tải được gì.
+        const buttons = Array.from(document.querySelectorAll('button, a.ant-btn, .ant-btn'))
+          .filter(b => this.isElementVisibleAndEnabled(b));
 
-      if (!dlBtn) {
-        const fallbackBtns = Array.from(document.querySelectorAll('.ant-pagination-options ~ button:last-of-type'));
-        if (fallbackBtns.length > 0) {
-          dlBtn = fallbackBtns[fallbackBtns.length - 1];
+        // 1. Ưu tiên tìm nút có chứa chữ XML
+        let btn = buttons.find(b => {
+          const content = (b.getAttribute('title') || b.innerText || b.getAttribute('aria-label') || '').toLowerCase();
+          return content.includes('xml');
+        });
+        if (btn) return btn;
+
+        // 2. Tìm nút có chữ "tải về" hoặc "tải hóa đơn" (loại trừ PDF/Excel/Kết xuất/bản thể hiện)
+        btn = buttons.find(b => {
+          const content = (b.getAttribute('title') || b.innerText || b.getAttribute('aria-label') || '').toLowerCase();
+          if (content.includes('tải về') || content.includes('tải hóa đơn')) {
+            if (!content.includes('bản thể hiện') && !content.includes('pdf') && !content.includes('excel') && !content.includes('danh sách') && !content.includes('kết xuất')) {
+              return true;
+            }
+          }
+          return false;
+        });
+        if (btn) return btn;
+
+        // 3. Fallback theo SVG Icon
+        const icons = Array.from(document.querySelectorAll('svg path[d^="M10.54"], svg path[d*="M19 9h-4V3H9v6H5l7 7 7-7z"]'));
+        if (icons.length > 0) {
+          const btns = icons.map(i => i.closest('button, a')).filter(b => b && this.isElementVisibleAndEnabled(b));
+          const validBtns = btns.filter(b => {
+            const content = (b.getAttribute('title') || b.innerText || '').toLowerCase();
+            return !content.includes('excel') && !content.includes('danh sách') && !content.includes('bản thể hiện') && !content.includes('pdf') && !content.includes('kết xuất');
+          });
+          if (validBtns.length > 0) return validBtns[validBtns.length - 1];
+          if (btns.length > 0) return btns[btns.length - 1];
         }
+
+        // 4. Fallback theo pagination options
+        const fallbackBtns = Array.from(document.querySelectorAll('.ant-pagination-options ~ button:last-of-type'))
+          .filter(b => this.isElementVisibleAndEnabled(b));
+        if (fallbackBtns.length > 0) return fallbackBtns[fallbackBtns.length - 1];
+
+        return null;
+      };
+
+      let dlBtn = null;
+      const startTime = Date.now();
+      const clickRetryMs = 6000;
+      let lastClickTime = 0;
+      while (Date.now() - startTime < clickRetryMs) {
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (skipSignal.aborted) throw new DOMException('Người dùng bấm Bỏ qua', 'AbortError');
+
+        dlBtn = findDownloadButton();
+        if (dlBtn && this.isElementVisibleAndEnabled(dlBtn)) {
+          break;
+        }
+
+        // Click lại mỗi 500ms nếu nút tải chưa xuất hiện — xử lý trường hợp
+        // tab Mua vào sau khi chuyển từ Bán ra, React chưa kịp gắn listener hoặc
+        // click đầu tiên bị nuốt mất. Query lại dòng fresh theo index.
+        if (Date.now() - lastClickTime >= 500) {
+          lastClickTime = Date.now();
+          const freshRows = this.getVisibleInvoiceRows();
+          const freshRow = freshRows[index] || row;
+          if (freshRow && freshRow !== row) {
+            freshRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            this.clickRow(freshRow);
+          } else {
+            this.clickRow(row);
+          }
+        }
+
+        // Fast-path: query lại nút mỗi vòng lặp và click trực tiếp bằng trusted input
+        // event nếu nút đã xuất hiện rồi mà chưa được bắt (giảm phụ thuộc vào retry click)
+        if (dlBtn && !this.isElementVisibleAndEnabled(dlBtn)) {
+          dlBtn = null;
+        }
+
+        await this.wait(150);
       }
 
       if (!dlBtn) {
-        throw new Error('Không tìm thấy nút Tải xuống.');
+        throw new Error('Không tìm thấy nút Tải xuống (XML chưa xuất hiện trong bảng).');
       }
 
       const operationId = `${this.currentPage}-${index}-${Date.now()}`;
@@ -1860,7 +2475,405 @@ function initApp() {
       });
     }
 
+    async downloadRowViaModalCrawl(row, index, signal, skipSignal) {
+      this.setState('SELECTING_ROW');
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      this.clickRow(row);
+
+      await this.wait(200);
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      if (skipSignal.aborted) throw new DOMException('Người dùng bấm Bỏ qua', 'AbortError');
+
+      let viewBtn = this.findViewInvoiceButton(row);
+      if (!viewBtn) {
+        this.clickRow(row);
+        await this.wait(300);
+        viewBtn = this.findViewInvoiceButton(row);
+      }
+
+      if (!viewBtn) {
+        throw new Error('Không tìm thấy nút Xem hóa đơn (biểu tượng con mắt)');
+      }
+
+      this.ui.log(`👁 Dòng ${index + 1}: Bấm nút Xem hóa đơn để crawl dữ liệu...`, 'info');
+      viewBtn.click();
+      await this.sendNativeClick(viewBtn);
+
+      const modalEl = await this.waitForModal(10000, signal, skipSignal);
+      if (!modalEl) {
+        throw new Error('Không mở được modal xem hóa đơn');
+      }
+
+      await this.wait(400);
+
+      const modalDoc = this.getModalDocument(modalEl);
+      const rowContext = this.extractRowContext(row);
+      const invoiceData = this.parseInvoiceDataFromModalDom(modalDoc, rowContext);
+
+      await this.closeModal(modalEl);
+
+      if (!invoiceData || (!invoiceData.so_hdon && !invoiceData.nban_ten && (!invoiceData.items || invoiceData.items.length === 0))) {
+        throw new Error('Không thể crawl dữ liệu từ modal xem hóa đơn');
+      }
+
+      const isSelling = this.ui.shadow.getElementById('rad-invoice-selling').checked;
+      const invoiceType = isSelling ? 'selling' : 'buying';
+
+      const res = await window.electronAPI.saveCrawledInvoiceXml({ invoiceData, invoiceType });
+      if (res && res.success && res.reviewItems) {
+        return { status: 'success', reviewItems: res.reviewItems, crawled: true };
+      } else {
+        throw new Error(res ? res.reason : 'Lỗi tạo XML từ dữ liệu crawl');
+      }
+    }
+
+    findViewInvoiceButton(row) {
+      if (row) {
+        const rowElements = Array.from(row.querySelectorAll('button, a, span, i, svg'))
+          .filter(el => this.isElementVisibleAndEnabled(el.closest('button, a') || el));
+
+        let btn = rowElements.find(el => {
+          const txt = (el.getAttribute('title') || el.getAttribute('aria-label') || el.innerText || '').toLowerCase();
+          return txt.includes('xem') || el.classList.contains('anticon-eye') || (el.querySelector && el.querySelector('.anticon-eye'));
+        });
+        if (btn) return btn.closest('button, a') || btn;
+      }
+
+      const allButtons = Array.from(document.querySelectorAll('button, a.ant-btn, .ant-btn'))
+        .filter(b => this.isElementVisibleAndEnabled(b));
+
+      let viewBtn = allButtons.find(b => {
+        const txt = (b.getAttribute('title') || b.getAttribute('aria-label') || b.innerText || '').toLowerCase();
+        return txt.includes('xem hóa đơn') || txt.includes('xem chi tiết') || (txt.includes('xem') && !txt.includes('xem thêm') && !txt.includes('xác nhận'));
+      });
+      if (viewBtn) return viewBtn;
+
+      viewBtn = allButtons.find(b => {
+        return b.querySelector('.anticon-eye, svg.eye') || (b.innerHTML && b.innerHTML.includes('anticon-eye'));
+      });
+      if (viewBtn) return viewBtn;
+
+      const paginationContainers = document.querySelectorAll('.ant-pagination, .ant-table-pagination, .ant-pagination-options');
+      for (const container of paginationContainers) {
+        const parent = container.parentElement;
+        if (!parent) continue;
+        const siblingBtns = Array.from(parent.querySelectorAll('button, a.ant-btn'))
+          .filter(b => this.isElementVisibleAndEnabled(b));
+        if (siblingBtns.length >= 1) {
+          return siblingBtns[0];
+        }
+      }
+
+      return null;
+    }
+
+    async waitForModal(timeoutMs = 10000, signal, skipSignal) {
+      const startTime = Date.now();
+      while (Date.now() - startTime < timeoutMs) {
+        if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (skipSignal && skipSignal.aborted) throw new DOMException('Người dùng bấm Bỏ qua', 'AbortError');
+
+        const modals = Array.from(document.querySelectorAll('.ant-modal-root, .ant-modal, .ant-modal-content, div[role="dialog"], .modal-dialog'))
+          .filter(m => {
+            if (!m) return false;
+            const style = window.getComputedStyle(m);
+            if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+            const rect = m.getBoundingClientRect();
+            return rect.width > 150 && rect.height > 150;
+          });
+
+        if (modals.length > 0) {
+          return modals[modals.length - 1];
+        }
+        await this.wait(150);
+      }
+      return null;
+    }
+
+    getModalDocument(modalEl) {
+      const iframe = modalEl.querySelector('iframe');
+      if (iframe) {
+        try {
+          const doc = iframe.contentDocument || (iframe.contentWindow && iframe.contentWindow.document);
+          if (doc && doc.body && doc.body.innerHTML.trim().length > 0) {
+            return doc;
+          }
+        } catch (e) {
+          console.warn('Không thể đọc trực tiếp iframe:', e);
+        }
+      }
+      return modalEl;
+    }
+
+    extractRowContext(row) {
+      const cells = Array.from(row.querySelectorAll('td')).map(c => (c.innerText || c.textContent || '').trim());
+      let invoiceNumber = '';
+      let ngayLap = '';
+      let partnerName = '';
+      let partnerMst = '';
+      let tongThanhToan = 0;
+
+      for (const cell of cells) {
+        const mstMatch = cell.match(/^(\d{10}(-\d{3})?)$/);
+        if (mstMatch && !partnerMst) {
+          partnerMst = mstMatch[1];
+        }
+        const numMatch = cell.match(/^[0-9]{5,8}$/);
+        if (numMatch && !invoiceNumber) {
+          invoiceNumber = numMatch[0];
+        }
+        const dateMatch = cell.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+        if (dateMatch && !ngayLap) {
+          ngayLap = `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+        }
+        if (cell.length > 5 && !partnerName && !cell.match(/^\d+$/) && !dateMatch && !mstMatch) {
+          partnerName = cell;
+        }
+      }
+      return { invoiceNumber, ngayLap, partnerName, partnerMst, tongThanhToan };
+    }
+
+    parseInvoiceDataFromModalDom(containerDoc, rowContext = {}) {
+      const body = containerDoc.body || containerDoc;
+      const fullText = (body.innerText || body.textContent || '').trim();
+
+      const cleanNum = (val) => {
+        if (!val) return 0;
+        let str = String(val).trim();
+        if (str.includes('.') && str.includes(',')) {
+          str = str.replace(/\./g, '').replace(',', '.');
+        } else if (str.includes('.')) {
+          const parts = str.split('.');
+          if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) str = str.replace(/\./g, '');
+        } else if (str.includes(',')) {
+          const parts = str.split(',');
+          if (parts.length > 2 || (parts.length === 2 && parts[1].length === 3)) str = str.replace(/,/g, '');
+          else str = str.replace(',', '.');
+        }
+        const n = parseFloat(str.replace(/[^0-9.-]/g, ''));
+        return isNaN(n) ? 0 : n;
+      };
+
+      const getLabelText = (labels) => {
+        const els = Array.from(body.querySelectorAll('*'));
+        for (const el of els) {
+          if (el.children.length > 3) continue;
+          const txt = (el.innerText || el.textContent || '').trim();
+          for (const lbl of labels) {
+            if (txt.toLowerCase().includes(lbl.toLowerCase())) {
+              const idx = txt.toLowerCase().indexOf(lbl.toLowerCase());
+              let val = txt.substring(idx + lbl.length).replace(/^[:\s\-]+/, '').trim();
+              if (val) return val.split('\n')[0].trim();
+              let sib = el.nextElementSibling;
+              if (sib) {
+                let sTxt = (sib.innerText || sib.textContent || '').trim();
+                if (sTxt) return sTxt.split('\n')[0].trim();
+              }
+            }
+          }
+        }
+        return '';
+      };
+
+      // 1. Invoice Number (SHDon)
+      let so_hdon = '';
+      const shdMatch = fullText.match(/(?:Số|Số\s*HĐ|SHDon|Số\s*hóa\s*đơn)\s*[:\s]*0*(\d+)/i);
+      if (shdMatch) so_hdon = shdMatch[1];
+      else if (rowContext.invoiceNumber) so_hdon = rowContext.invoiceNumber;
+
+      // 2. Form & Serial
+      let kh_ms_hdon = '1';
+      let kh_hdon = '';
+      const khmsMatch = fullText.match(/(?:Mẫu\s*số|Ký\s*hiệu\s*mẫu\s*số)\s*[:\s]*([0-9\/]+)/i);
+      if (khmsMatch) kh_ms_hdon = khmsMatch[1].trim();
+
+      const khMatch = fullText.match(/(?:Ký\s*hiệu|KH|KHHDon)\s*[:\s]*([A-Z0-9\/_-]+)/i);
+      if (khMatch && !khMatch[1].toLowerCase().includes('mẫu')) kh_hdon = khMatch[1].trim();
+
+      // 3. Date
+      let ngay_lap = '';
+      const dateMatch1 = fullText.match(/Ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/i);
+      if (dateMatch1) {
+        ngay_lap = `${dateMatch1[3]}-${dateMatch1[2].padStart(2, '0')}-${dateMatch1[1].padStart(2, '0')}`;
+      } else {
+        const dateMatch2 = fullText.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+        if (dateMatch2) {
+          ngay_lap = `${dateMatch2[3]}-${dateMatch2[2].padStart(2, '0')}-${dateMatch2[1].padStart(2, '0')}`;
+        } else if (rowContext.ngayLap) {
+          ngay_lap = rowContext.ngayLap;
+        }
+      }
+
+      // 4. Payment method
+      let httt = 'CK';
+      const htttMatch = fullText.match(/(?:Hình\s*thức\s*thanh\s*toán|HTTT)\s*[:\s]*([^\n\r<]+)/i);
+      if (htttMatch) {
+        const h = htttMatch[1].toUpperCase();
+        if (h.includes('TM')) httt = 'TM';
+        else if (h.includes('CK')) httt = 'CK';
+      }
+
+      // 5. Seller (NBan)
+      let nban_ten = getLabelText(['Tên đơn vị bán hàng', 'Tên người bán', 'Bên bán', 'Đơn vị bán']);
+      let nban_mst = getLabelText(['Mã số thuế người bán', 'MST người bán']);
+      let nban_dchi = getLabelText(['Địa chỉ người bán']);
+
+      if (!nban_ten) {
+        const sigMatch = fullText.match(/Ký\s*bởi\s*[:\s]*([^\n\r<]+)/i);
+        if (sigMatch) nban_ten = sigMatch[1].trim();
+      }
+
+      if (!nban_mst) {
+        const mstMatches = fullText.match(/(?:Mã\s*số\s*thuế|MST)\s*[:\s]*(\d{10}(?:-\d{3})?)/gi);
+        if (mstMatches && mstMatches.length >= 1) {
+          const m = mstMatches[0].match(/(\d{10}(?:-\d{3})?)/);
+          if (m) nban_mst = m[1];
+        }
+      }
+
+      // 6. Buyer (NMua)
+      let nmua_ten = getLabelText(['Tên đơn vị mua hàng', 'Tên người mua', 'Bên mua', 'Họ tên người mua hàng']);
+      let nmua_mst = getLabelText(['Mã số thuế người mua', 'MST người mua']);
+      let nmua_dchi = getLabelText(['Địa chỉ người mua']);
+
+      if (!nmua_mst) {
+        const mstMatches = fullText.match(/(?:Mã\s*số\s*thuế|MST)\s*[:\s]*(\d{10}(?:-\d{3})?)/gi);
+        if (mstMatches && mstMatches.length >= 2) {
+          const m = mstMatches[1].match(/(\d{10}(?:-\d{3})?)/);
+          if (m) nmua_mst = m[1];
+        }
+      }
+
+      if (rowContext.partnerName) {
+        if (!nban_ten) nban_ten = rowContext.partnerName;
+        if (!nmua_ten) nmua_ten = rowContext.partnerName;
+      }
+      if (rowContext.partnerMst) {
+        if (!nban_mst) nban_mst = rowContext.partnerMst;
+        if (!nmua_mst) nmua_mst = rowContext.partnerMst;
+      }
+
+      // 7. Parse Items
+      const items = [];
+      const tables = Array.from(body.querySelectorAll('table'));
+      let itemsTable = null;
+      for (const table of tables) {
+        const txt = (table.innerText || table.textContent || '').toLowerCase();
+        if (txt.includes('tên hàng') || txt.includes('hàng hóa') || txt.includes('dịch vụ') || txt.includes('thành tiền')) {
+          itemsTable = table;
+          break;
+        }
+      }
+
+      if (itemsTable) {
+        const rows = Array.from(itemsTable.querySelectorAll('tr'));
+        let headerRowIdx = -1;
+        let colIdx = { stt: -1, ten: -1, dvt: -1, sl: -1, dg: -1, tt: -1, ts: -1 };
+
+        for (let r = 0; r < Math.min(rows.length, 5); r++) {
+          const cells = Array.from(rows[r].querySelectorAll('th, td'));
+          cells.forEach((cell, cIdx) => {
+            const cTxt = (cell.innerText || cell.textContent || '').trim().toLowerCase();
+            if (cTxt === 'stt' || cTxt.includes('số tt')) colIdx.stt = cIdx;
+            else if (cTxt.includes('hàng hóa') || cTxt.includes('tên hàng') || cTxt.includes('dịch vụ') || cTxt.includes('nội dung')) colIdx.ten = cIdx;
+            else if (cTxt.includes('đvt') || cTxt.includes('đơn vị tính')) colIdx.dvt = cIdx;
+            else if (cTxt.includes('số lượng')) colIdx.sl = cIdx;
+            else if (cTxt.includes('đơn giá')) colIdx.dg = cIdx;
+            else if (cTxt.includes('thành tiền')) colIdx.tt = cIdx;
+            else if (cTxt.includes('thuế suất') || cTxt.includes('% thuế')) colIdx.ts = cIdx;
+          });
+
+          if (colIdx.ten !== -1 || colIdx.tt !== -1) {
+            headerRowIdx = r;
+            break;
+          }
+        }
+
+        const startIdx = headerRowIdx >= 0 ? headerRowIdx + 1 : 1;
+        for (let r = startIdx; r < rows.length; r++) {
+          const cells = Array.from(rows[r].querySelectorAll('td'));
+          if (cells.length < 2) continue;
+
+          const rTxt = cells.map(c => (c.innerText || c.textContent || '').trim()).join(' ');
+          if (rTxt.toLowerCase().includes('cộng') || rTxt.toLowerCase().includes('tổng cộng') || rTxt.toLowerCase().includes('số tiền bằng chữ')) {
+            continue;
+          }
+
+          const itemTen = colIdx.ten >= 0 && cells[colIdx.ten] ? cells[colIdx.ten].innerText.trim() : (cells[1] ? cells[1].innerText.trim() : '');
+          if (!itemTen) continue;
+
+          const itemDvt = colIdx.dvt >= 0 && cells[colIdx.dvt] ? cells[colIdx.dvt].innerText.trim() : '';
+          const itemSl = colIdx.sl >= 0 && cells[colIdx.sl] ? cleanNum(cells[colIdx.sl].innerText) : 1;
+          const itemDg = colIdx.dg >= 0 && cells[colIdx.dg] ? cleanNum(cells[colIdx.dg].innerText) : 0;
+          const itemTt = colIdx.tt >= 0 && cells[colIdx.tt] ? cleanNum(cells[colIdx.tt].innerText) : (itemSl * itemDg);
+          const itemTs = colIdx.ts >= 0 && cells[colIdx.ts] ? cells[colIdx.ts].innerText.trim() : '';
+
+          items.push({
+            tchat: '1',
+            ma: '',
+            ten: itemTen,
+            dvt: itemDvt,
+            so_luong: itemSl,
+            don_gia: itemDg,
+            thanh_tien: itemTt,
+            thue_suat: itemTs
+          });
+        }
+      }
+
+      // 8. Totals
+      let tong_chua_thue = 0;
+      let tong_thue = 0;
+      let tong_thanh_toan = 0;
+
+      const chuaThueMatch = fullText.match(/(?:Tổng\s*tiền\s*chưa\s*thuế|Tổng\s*cộng\s*thành\s*tiền\s*chưa\s*có\s*thuế)\s*[:\s]*([0-9.,]+)/i);
+      if (chuaThueMatch) tong_chua_thue = cleanNum(chuaThueMatch[1]);
+
+      const thueMatch = fullText.match(/(?:Tổng\s*tiền\s*thuế|Tổng\s*cộng\s*tiền\s*thuế)\s*[:\s]*([0-9.,]+)/i);
+      if (thueMatch) tong_thue = cleanNum(thueMatch[1]);
+
+      const thanhToanMatch = fullText.match(/(?:Tổng\s*tiền\s*thanh\s*toán|Tổng\s*cộng\s*tiền\s*thanh\s*toán|Tổng\s*tiền\s*thanh\s*toán\s*bằng\s*số)\s*[:\s]*([0-9.,]+)/i);
+      if (thanhToanMatch) tong_thanh_toan = cleanNum(thanhToanMatch[1]);
+
+      if (!tong_chua_thue && items.length > 0) {
+        tong_chua_thue = items.reduce((sum, it) => sum + (it.thanh_tien || 0), 0);
+      }
+      if (!tong_thanh_toan) {
+        tong_thanh_toan = tong_chua_thue + tong_thue;
+      }
+
+      return {
+        kh_ms_hdon,
+        kh_hdon,
+        so_hdon,
+        ngay_lap,
+        httt,
+        nban_ten,
+        nban_mst,
+        nban_dchi,
+        nmua_ten,
+        nmua_mst,
+        nmua_dchi,
+        items,
+        tong_chua_thue,
+        tong_thue,
+        tong_thanh_toan
+      };
+    }
+
+    async closeModal(modalEl) {
+      if (!modalEl) return;
+      const closeBtn = modalEl.querySelector('.ant-modal-close, button.close, button[aria-label="Close"], .ant-modal-close-x, svg[data-icon="close"]');
+      if (closeBtn) {
+        closeBtn.click();
+      } else {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      }
+      await this.wait(300);
+    }
+
     async showReviewModal() {
+      if (this.pendingReviews.length === 0) return;
       const modal = this.ui.shadow.getElementById('review-modal');
       const tbody = this.ui.shadow.getElementById('review-tbody');
       const btnCancel = this.ui.shadow.getElementById('btn-cancel-review');
@@ -1875,7 +2888,6 @@ function initApp() {
       const cntAll = this.ui.shadow.getElementById('cnt-all');
       const cntGoods = this.ui.shadow.getElementById('cnt-goods');
       const cntServices = this.ui.shadow.getElementById('cnt-services');
-      const cntReview = this.ui.shadow.getElementById('cnt-review');
 
       tbody.innerHTML = '';
       const templates = await window.electronAPI.getTemplates();
@@ -1890,29 +2902,24 @@ function initApp() {
       let totalTax = 0;
       let goodsCount = 0;
       let serviceCount = 0;
-      let lowConfidenceCount = 0;
 
       this.pendingReviews.forEach((item, index) => {
         totalPretax += (item.tongChuaThue || 0);
         totalTax += (item.tongThue || 0);
 
-        const score = item.score !== undefined ? item.score : 85;
-        if (score < 80) lowConfidenceCount++;
-
         const isService = (item.templateName || '').includes('dịch vụ') || (item.template || '').includes('dich_vu');
         if (isService) serviceCount++;
         else goodsCount++;
 
-        const scoreClass = score >= 85 ? 'high' : score >= 60 ? 'med' : 'low';
-        const scoreLabel = `${score}% tin cậy`;
-
         const tr = document.createElement('tr');
         tr.dataset.index = index;
         tr.dataset.category = isService ? 'services' : 'goods';
-        tr.dataset.lowConfidence = score < 80 ? 'true' : 'false';
 
         const isSelling = item.invoiceType === 'selling';
-        const templateList = isSelling ? templates.selling : templates.buying;
+        let templateList = isSelling ? [...templates.selling] : [...templates.buying];
+        if (item.template && !templateList.some(t => t.file === item.template)) {
+          templateList.push({ file: item.template, name: item.templateName || item.template });
+        }
 
         const optionsHtml = templateList.map(t =>
           `<option value="${t.file}" ${t.file === item.template ? 'selected' : ''}>${t.name}</option>`
@@ -1928,11 +2935,6 @@ function initApp() {
             ${isSelling ? item.nmuaTen : item.nbanTen}
           </td>
           <td>
-            <span class="confidence-badge ${scoreClass}" title="${(item.reasons || []).join(' | ')}">
-              ${scoreLabel}
-            </span>
-          </td>
-          <td>
             <select data-index="${index}">${optionsHtml}</select>
           </td>
           <td style="text-align: center;">
@@ -1945,7 +2947,6 @@ function initApp() {
       cntAll.textContent = this.pendingReviews.length;
       cntGoods.textContent = goodsCount;
       cntServices.textContent = serviceCount;
-      cntReview.textContent = lowConfidenceCount;
 
       reviewSummaryInfo.innerHTML = `Tổng tiền chưa thuế: <b>${formatCurrency(totalPretax)}</b> | Thuế GTGT: <b>${formatCurrency(totalTax)}</b>`;
 
@@ -1961,7 +2962,6 @@ function initApp() {
           if (filter === 'all') r.style.display = '';
           else if (filter === 'goods' && r.dataset.category === 'goods') r.style.display = '';
           else if (filter === 'services' && r.dataset.category === 'services') r.style.display = '';
-          else if (filter === 'review' && r.dataset.lowConfidence === 'true') r.style.display = '';
           else r.style.display = 'none';
         });
       };
@@ -1997,7 +2997,9 @@ function initApp() {
         if (btnView) {
           const idx = parseInt(btnView.dataset.index);
           const item = this.pendingReviews[idx];
-          if (item) this.showDetailModal(item);
+          const isSelling = item.invoiceType === 'selling';
+          const templateList = isSelling ? templates.selling : templates.buying;
+          if (item) this.showDetailModal(item, templateList, idx);
         }
       };
 
@@ -2009,6 +3011,7 @@ function initApp() {
         }
         modal.style.display = 'none';
         this.pendingReviews = [];
+        this.ui.showContinueBar(0);
       };
 
       btnExport.onclick = async () => {
@@ -2035,9 +3038,45 @@ function initApp() {
           const results = await window.electronAPI.exportExcelBatch(this.pendingReviews);
           removeListener();
           const successResults = results.filter(r => r.success);
+          const failedResults = results.filter(r => !r.success);
+
+          if (failedResults.length > 0) {
+            this.ui.showToast(`Lỗi xuất Excel: ${failedResults[0].reason || 'Không rõ nguyên nhân'}`, { type: 'error' });
+          }
+
+          // Dọn dẹp HOÀN TOÀN mọi file XML sau khi export (kể cả file lỗi).
+          // Worker đã xóa XML của các hóa đơn thành công; ở đây xóa nốt XML còn sót lại
+          // (hóa đơn parse lỗi, không có template phù hợp...) vì người dùng đã hoàn tất
+          // việc chọn mẫu & xuất → không giữ lại XML "thử lại" trên đĩa nữa.
+          try {
+            await window.electronAPI.deleteXmlBatch(this.pendingReviews);
+          } catch (cleanupErr) {
+            console.error('Lỗi dọn XML sau export:', cleanupErr);
+          }
+
+          if (this.pendingReviews.length > 0) {
+            const batchSession = {
+              id: 'batch_' + Date.now(),
+              exportDate: new Date().toISOString(),
+              invoiceType: this.pendingReviews[0]?.invoiceType || 'buying',
+              totalInvoices: this.pendingReviews.length,
+              totalAmount: this.pendingReviews.reduce((sum, item) => sum + (item.tongThanhToan || 0), 0),
+              invoices: this.pendingReviews.map(item => ({
+                invoiceType: item.invoiceType,
+                invoiceNumber: item.invoiceNumber,
+                ngayLap: item.ngayLap,
+                partnerName: item.invoiceType === 'selling' ? item.nmuaTen : item.nbanTen,
+                totalAmount: item.tongThanhToan,
+                templateName: item.templateName || item.template
+              }))
+            };
+            await window.electronAPI.addHistory([batchSession]);
+          }
+
           const successCount = successResults.length;
           modal.style.display = 'none';
           this.pendingReviews = [];
+          this.ui.showContinueBar(0);
 
           const folder = await window.electronAPI.getDownloadFolder();
           const primaryFile = successResults[0]?.outputPath;
@@ -2072,15 +3111,28 @@ function initApp() {
       };
     }
 
-    showDetailModal(item) {
+    showDetailModal(item, templateList = [], originalIndex = -1) {
       const detailModal = this.ui.shadow.getElementById('detail-modal');
       const detailTitle = this.ui.shadow.getElementById('detail-modal-title');
       const detailSubtitle = this.ui.shadow.getElementById('detail-modal-subtitle');
       const detailBody = this.ui.shadow.getElementById('detail-modal-body');
       const btnCloseDetail = this.ui.shadow.getElementById('btn-close-detail');
 
+      let templateSelectHtml = '';
+      if (templateList && templateList.length > 0 && originalIndex >= 0) {
+        const options = templateList.map(t => `<option value="${t.file}" ${t.file === item.template ? 'selected' : ''}>${t.name}</option>`).join('');
+        templateSelectHtml = `
+          <div style="margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+            <b style="font-size: 12px; color: #2c3e50;">Mẫu Excel MISA:</b>
+            <select id="detail-template-select" style="font-size: 12px; padding: 4px; border-radius: 4px; border: 1px solid #dcdfe6; background: #fff;">
+              ${options}
+            </select>
+          </div>
+        `;
+      }
+
       detailTitle.textContent = `Hóa Đơn Số ${item.invoiceNumber || 'N/A'}`;
-      detailSubtitle.textContent = `Ngày lập: ${item.ngayLap || 'N/A'} | Mẫu đề xuất: ${item.templateName || item.template}`;
+      detailSubtitle.innerHTML = `Ngày lập: ${item.ngayLap || 'N/A'} ${templateSelectHtml}`;
 
       const itemsRows = (item.items || []).map((it, idx) => `
         <tr>
@@ -2136,6 +3188,20 @@ function initApp() {
       `;
 
       detailModal.style.display = 'flex';
+
+      const detailSelect = this.ui.shadow.getElementById('detail-template-select');
+      if (detailSelect) {
+        detailSelect.onchange = (e) => {
+          const newVal = e.target.value;
+          item.template = newVal;
+          const tbody = this.ui.shadow.getElementById('review-tbody');
+          if (tbody) {
+            const mainSelect = tbody.querySelector(`select[data-index="${originalIndex}"]`);
+            if (mainSelect) mainSelect.value = newVal;
+          }
+        };
+      }
+
       btnCloseDetail.onclick = () => {
         detailModal.style.display = 'none';
       };
@@ -2149,7 +3215,9 @@ function initApp() {
         return false;
       }
 
-      const oldFirstRowText = document.querySelector(this.selectors.invoiceRows)?.textContent || '';
+      // Dùng dòng ĐANG HIỂN THỊ để so sánh (tránh đọc nhầm bảng ẩn của tab trước)
+      const visibleRows = this.getVisibleInvoiceRows();
+      const oldFirstRowText = visibleRows[0]?.textContent || '';
       nextBtn.click();
 
       await this.wait(1000);
@@ -2160,8 +3228,9 @@ function initApp() {
       while (Date.now() - startTime < pageChangeTimeoutMs) {
         if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
-        const newFirstRowText = document.querySelector(this.selectors.invoiceRows)?.textContent || '';
-        if (newFirstRowText !== oldFirstRowText) {
+        const newVisibleRows = this.getVisibleInvoiceRows();
+        const newFirstRowText = newVisibleRows[0]?.textContent || '';
+        if (newFirstRowText !== oldFirstRowText && newVisibleRows.length > 0) {
           await this.wait(1000);
           return true;
         }
