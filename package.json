@@ -20,6 +20,13 @@
   "build": {
     "appId": "com.accounting.invoice-downloader",
     "productName": "Invoice Batch Downloader",
+    "files": [
+      "**/*",
+      "!.agents",
+      "!**/.agents",
+      "!**/.agents/**",
+      "!skills-lock.json"
+    ],
     "publish": [
       {
         "provider": "github",
