@@ -15,9 +15,10 @@ async function processItems() {
         item.xmlPath,
         item.templateDir,
         item.invoiceType,
-        null,
-        activeMst,
-        item.template
+        item.outputDir || null,
+        item.historyReexport ? null : activeMst,
+        item.template,
+        item.invoiceData || null
       );
 
       if (result.success) {

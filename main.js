@@ -416,7 +416,9 @@ function openBatchDownloadWindow() {
                       score: best.score !== undefined ? best.score : 80,
                       reasons: best.reasons || [],
                       invoiceType: actualType,
-                      templateDir: templateDir
+                      templateDir: templateDir,
+                      outputDir: path.dirname(xmlFile),
+                      invoiceData: invoice
                     });
                   } else {
                     skippedReasons.push("Không tìm thấy thư mục mẫu");
@@ -913,7 +915,9 @@ ipcMain.handle('save-crawled-invoice-xml', async (event, payload) => {
           score: best.score !== undefined ? best.score : 80,
           reasons: best.reasons || [],
           invoiceType: actualType,
-          templateDir: templateDir
+          templateDir: templateDir,
+          outputDir: path.dirname(destPath),
+          invoiceData: invoice
         });
       }
     }
@@ -966,6 +970,78 @@ ipcMain.handle('clear-history', async () => {
   return { success: true };
 });
 
+ipcMain.handle('prepare-history-reexport', async (event, payload = {}) => {
+  try {
+    const { sessionId, invoiceTypes, invoiceType } = payload || {};
+    if (!sessionId) {
+      return { success: false, reason: 'Không tìm thấy lượt tải này trong lịch sử.' };
+    }
+
+    const history = await loadHistory();
+    const session = history.find(item => String(item.id) === String(sessionId));
+    if (!session || !Array.isArray(session.invoices) || session.invoices.length === 0) {
+      return { success: false, reason: 'Không tìm thấy lượt tải này trong lịch sử.' };
+    }
+
+    if (session.invoices.some(invoice =>
+      !invoice.invoiceData || typeof invoice.invoiceData !== 'object' ||
+      Array.isArray(invoice.invoiceData) || !Array.isArray(invoice.invoiceData.items)
+    )) {
+      return {
+        success: false,
+        reason: 'Lượt tải này được lưu trước khi có dữ liệu xuất lại. Chỉ các lượt mới mới có thể xuất lại.'
+      };
+    }
+
+    const selectedTypes = Array.isArray(invoiceTypes)
+      ? invoiceTypes
+      : session.invoices.map(invoice => invoiceType || invoice.exportedInvoiceType || invoice.invoiceType || session.invoiceType || 'buying');
+    if (selectedTypes.length !== session.invoices.length || selectedTypes.some(type => !['buying', 'selling'].includes(type))) {
+      return { success: false, reason: 'Vui lòng chọn loại hóa đơn hợp lệ cho từng dòng.' };
+    }
+
+    const reviewItems = session.invoices.map((invoice, index) => {
+      const invoiceData = invoice.invoiceData;
+      const selectedType = selectedTypes[index];
+      const templateDir = getTemplatesDir(selectedType);
+      if (!fs.existsSync(templateDir)) {
+        throw new Error(`Không tìm thấy thư mục mẫu MISA cho loại ${selectedType === 'selling' ? 'bán ra' : 'mua vào'}.`);
+      }
+      const rankings = classifyInvoice(invoiceData, selectedType);
+      const best = rankings[0] || {};
+      return {
+        xmlPath: '',
+        outputDir: invoice.sourceDir || downloadDestination || app.getPath('downloads'),
+        historyReexport: true,
+        invoiceNumber: invoiceData.so_hdon || invoice.invoiceNumber,
+        nbanTen: invoiceData.nban_ten || '',
+        nbanMst: invoiceData.nban_mst || '',
+        nbanDchi: invoiceData.nban_dchi || '',
+        nmuaTen: invoiceData.nmua_ten || '',
+        nmuaMst: invoiceData.nmua_mst || '',
+        nmuaDchi: invoiceData.nmua_dchi || '',
+        ngayLap: invoiceData.ngay_lap || invoice.ngayLap || '',
+        tongChuaThue: invoiceData.tong_chua_thue || 0,
+        tongThue: invoiceData.tong_thue || 0,
+        tongThanhToan: invoiceData.tong_thanh_toan || 0,
+        items: invoiceData.items || [],
+        invoiceData,
+        template: best.file,
+        templateName: best.name || best.file,
+        score: best.score !== undefined ? best.score : 80,
+        reasons: best.reasons || [],
+        invoiceType: selectedType,
+        templateDir
+      };
+    });
+
+    return { success: true, sessionId: session.id, reviewItems };
+  } catch (error) {
+    console.error('Lỗi chuẩn bị xuất lại từ lịch sử:', error);
+    return { success: false, reason: error.message };
+  }
+});
+
 ipcMain.handle('export-excel-batch', async (event, items) => {
   if (!items || items.length === 0) return [];
 
@@ -978,7 +1054,8 @@ ipcMain.handle('export-excel-batch', async (event, items) => {
   const groups = new Map();
   for (const item of items) {
     const period = (item.ngayLap || '').substring(0, 7); // YYYY-MM
-    const destKey = path.join(path.dirname(item.xmlPath), period, item.template || '').toLowerCase();
+    const outputDir = item.outputDir || (item.xmlPath ? path.dirname(item.xmlPath) : downloadDestination);
+    const destKey = path.join(outputDir, period, item.template || '').toLowerCase();
     if (!groups.has(destKey)) groups.set(destKey, []);
     groups.get(destKey).push(item);
   }
@@ -1037,7 +1114,10 @@ ipcMain.handle('export-excel-batch', async (event, items) => {
     allResults = allResults.concat(res);
   });
 
-  return allResults;
+  return allResults.map(result => ({
+    ...result,
+    dirPath: result.outputPath ? path.dirname(result.outputPath) : undefined
+  }));
 });
 
 

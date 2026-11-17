@@ -49,6 +49,7 @@ const api = {
   getHistory: () => ipcRenderer.invoke('get-history'),
   addHistory: (items) => ipcRenderer.invoke('add-history', items),
   clearHistory: () => ipcRenderer.invoke('clear-history'),
+  prepareHistoryReexport: (payload) => ipcRenderer.invoke('prepare-history-reexport', payload),
   saveCrawledInvoiceXml: (payload) => ipcRenderer.invoke('save-crawled-invoice-xml', payload)
 };
 
@@ -62,6 +63,50 @@ function formatCurrency(val) {
   return new Intl.NumberFormat('vi-VN').format(Math.round(val)) + ' đ';
 }
 
+const UI_ICON_PATHS = {
+  activity: '<path d="M3 12h4l3-8 4 16 3-8h4"></path>',
+  alert: '<path d="M10.3 3.9 2.2 18a2 2 0 0 0 1.7 3h16.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4m0 4h.01"></path>',
+  arrowRight: '<path d="M5 12h14m-7-7 7 7-7 7"></path>',
+  building: '<rect x="4" y="3" width="16" height="18" rx="2"></rect><path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01M10 21v-3h4v3"></path>',
+  check: '<path d="m5 12 4 4L19 6"></path>',
+  chevronDown: '<path d="m6 9 6 6 6-6"></path>',
+  chevronRight: '<path d="m9 18 6-6-6-6"></path>',
+  chevronUp: '<path d="m18 15-6-6-6 6"></path>',
+  clock: '<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
+  close: '<path d="m18 6-12 12M6 6l12 12"></path>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5M12 15V3"></path>',
+  fileCheck: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6m-11 5 2 2 4-4"></path>',
+  fileSearch: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h7"></path><path d="M14 2v6h6m-8 3H8m2 4H8"></path><circle cx="17" cy="17" r="3"></circle><path d="m19.2 19.2 2 2"></path>',
+  fileSpreadsheet: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6M8 13h8m-8 4h8m-5-4v4"></path>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>',
+  folderTree: '<path d="M3 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v2"></path><path d="M5 10h6a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Zm12 1v3m0 0h3m-3 0h-2m2 0v5"></path>',
+  folderOpen: '<path d="m3 7 1-2h6l2 2h7a2 2 0 0 1 2 2l-2 9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"></path><path d="M3 13h17"></path>',
+  info: '<circle cx="12" cy="12" r="9"></circle><path d="M12 11v5m0-8h.01"></path>',
+  key: '<circle cx="8" cy="15" r="4"></circle><path d="m10.9 12.1 8.1-8.1 2 2-2 2 2 2-3 3-2-2-2.3 2.3"></path>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"></path>',
+  loader: '<path d="M21 12a9 9 0 1 1-6.2-8.6"></path>',
+  minus: '<path d="M5 12h14"></path>',
+  pause: '<path d="M8 5h3v14H8zM15 5h3v14h-3z"></path>',
+  play: '<path d="m7 4 13 8-13 8z"></path>',
+  refresh: '<path d="M20 7v5h-5M4 17v-5h5"></path><path d="M5.6 9A7 7 0 0 1 18 6l2 2M4 16l2 2a7 7 0 0 0 12.4-3"></path>',
+  search: '<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>',
+  skip: '<path d="m5 5 10 7-10 7zM19 5v14"></path>',
+  stop: '<rect x="5" y="5" width="14" height="14" rx="2"></rect>',
+  trash: '<path d="M3 6h18m-2 0-.9 14H5.9L5 6m4 0V4h6v2m-5 4v6m4-6v6"></path>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m17 8-5-5-5 5m5-5v12"></path>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="10" cy="7" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"></path>',
+  wrench: '<path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3 18l3 3 5.3-5.3a5 5 0 0 0 6.4-6.4L14 13l-3-3z"></path>'
+};
+
+function uiIcon(name, size = 16) {
+  const paths = UI_ICON_PATHS[name] || UI_ICON_PATHS.fileSpreadsheet;
+  return `<svg class="ui-icon" aria-hidden="true" focusable="false" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+}
+
+function loadingIcon(size = 14) {
+  return uiIcon('loader', size).replace('class="ui-icon"', 'class="ui-icon spin-icon"');
+}
+
 let isAppInitialized = false;
 function initApp() {
   if (isAppInitialized) return;
@@ -69,7 +114,7 @@ function initApp() {
   isAppInitialized = true;
 
   class OverlayUI {
-    constructor(onStart, onPause, onStop, onSkip, onRetryFailed, onChangeFolder, onContinueReview, initialFolder) {
+    constructor(onStart, onPause, onStop, onSkip, onRetryFailed, onChangeFolder, onContinueReview, onReexportHistory, initialFolder) {
       this.onStart = onStart;
       this.onPause = onPause;
       this.onStop = onStop;
@@ -77,6 +122,7 @@ function initApp() {
       this.onRetryFailed = onRetryFailed;
       this.onChangeFolder = onChangeFolder;
       this.onContinueReview = onContinueReview;
+      this.onReexportHistory = onReexportHistory;
 
       this.totalPretax = 0;
       this.totalTax = 0;
@@ -103,28 +149,28 @@ function initApp() {
 
     render(initialFolder) {
       this.shadow.innerHTML = `
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-      </style>
         <style>
+          .panel, .panel * { box-sizing: border-box; }
           .panel {
-    width: 440px;
+    width: min(440px, calc(100vw - 40px));
     background: rgba(255, 255, 255, 0.75);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: 16px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255,255,255,0.5);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
     color: #1e293b;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
     resize: both;
-    min-width: 340px;
-    min-height: 580px;
-    height: 680px;
+    min-width: min(340px, calc(100vw - 40px));
+    min-height: min(560px, calc(100vh - 40px));
+    height: min(680px, calc(100vh - 40px));
     max-height: 95vh;
   }
           .panel.minimized { display: none; }
@@ -167,6 +213,7 @@ function initApp() {
             background: transparent;
             border: none;
             color: #0f172a;
+            font-family: inherit;
             font-weight: bold;
             cursor: pointer;
             font-size: 16px;
@@ -203,43 +250,35 @@ function initApp() {
             flex: 1;
             overflow: hidden;
           }
-          .folder-section {
-            margin-bottom: 10px;
-            font-size: 12px;
-            background: #eef2fe;
-            padding: 8px 10px;
-            border-radius: 6px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
           .folder-title {
             font-size: 11px;
             font-weight: 600;
             color: #5a6a85;
             margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-          }
-          .folder-text {
-            font-weight: 600;
-            color: #0052cc;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 290px;
-            font-size: 12px;
+            letter-spacing: 0.1px;
           }
           .account-section {
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             font-size: 12px;
-            background: #eef2fe;
-            padding: 8px 10px;
-            border-radius: 6px;
-            display: flex;
+            background: #f1f5fa;
+            padding: 7px;
+            border-radius: 9px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto auto;
             gap: 5px;
             align-items: center;
           }
+          .account-section .custom-select { min-width: 0; }
+          .account-section .custom-select-trigger { min-height: 34px; }
+          .account-section .btn-small { min-height: 34px; white-space: nowrap; }
+          .btn-icon {
+            height: 34px;
+            padding: 6px 8px;
+            background: #fff;
+            color: #53657d;
+            border: 1px solid #d9e2ec;
+          }
+          .btn-icon:hover { background: #eaf1f8; color: #145c99; }
           .financial-card {
             background: #f0f7ff;
             border: 1px solid #cce3ff;
@@ -249,11 +288,13 @@ function initApp() {
             font-size: 11px;
           }
           .financial-title {
+            display: flex;
+            align-items: center;
+            gap: 5px;
             font-weight: 600;
             color: #0052cc;
             margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.1px;
           }
           .financial-grid {
             display: grid;
@@ -271,7 +312,9 @@ function initApp() {
             font-size: 10px;
           }
           .status-badge {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
             padding: 3px 8px;
             border-radius: 12px;
             font-size: 11px;
@@ -314,14 +357,19 @@ function initApp() {
   @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   @keyframes spin { 100% { transform: rotate(360deg); } }
           .modal {
-            position: absolute; top:0; left:0; width:100%; height:100%;
-            background: rgba(0,0,0,0.5); z-index: 10;
+            position: fixed; inset: 0; width: 100vw; height: 100vh;
+            box-sizing: border-box;
+            padding: 20px;
+            background: rgba(15, 23, 42, 0.46);
+            backdrop-filter: blur(3px);
+            z-index: 1000;
             display: none; flex-direction: column; justify-content: center; align-items: center;
             animation: fadeIn 0.2s ease-out forwards;
           }
           .modal-content {
-            background: white; padding: 15px; border-radius: 10px; width: 88%;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.25); display: flex; flex-direction: column; gap: 8px;
+            background: white; padding: 18px; border-radius: 12px; width: min(440px, calc(100vw - 40px));
+            max-height: calc(100vh - 40px);
+            box-shadow: 0 20px 55px rgba(15, 35, 58, 0.22); display: flex; flex-direction: column; gap: 9px;
             animation: scaleUp 0.3s ease-out forwards;
           }
           #review-modal .modal-content {
@@ -333,24 +381,32 @@ function initApp() {
             min-height: 420px;
             max-height: 95vh;
           }
-          .modal-content input {
-            padding: 6px; font-size: 12px; border: 1px solid #dcdfe6; border-radius: 4px;
+          .modal-content > input {
+            padding: 9px 10px; font: inherit; font-size: 13px; border: 1px solid #d3dde8; border-radius: 7px;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
           }
+          .modal-content > input:focus { border-color: #4c85bb; box-shadow: 0 0 0 3px rgba(20, 92, 153, 0.12); outline: none; }
+          .modal-header { flex-shrink: 0; }
+          #account-modal .modal-content { overflow-y: auto; }
           .acc-list {
             list-style: none; padding: 0; margin: 0; max-height: 120px; overflow-y: auto; font-size: 11px;
           }
+          .form-label { display: block; color: #52657a; font-size: 11px; font-weight: 600; margin-bottom: -5px; }
           .acc-item {
-            display: flex; justify-content: space-between; padding: 6px; border-bottom: 1px solid #eee; align-items: center;
+            display: flex; justify-content: space-between; gap: 8px; padding: 7px 4px; border-bottom: 1px solid #e8edf2; align-items: center;
           }
           .btn-small {
             font-size: 12px;
             background: #0052cc;
             color: white;
             border: none;
-            padding: 5px 10px;
-            border-radius: 4px;
+            padding: 6px 10px;
+            min-height: 32px;
+            border-radius: 7px;
             cursor: pointer;
-            transition: background 0.2s, transform 0.1s;
+            font-family: inherit;
+            font-weight: 600;
+            transition: background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
             display: inline-flex;
             align-items: center;
             justify-content: center;
@@ -362,45 +418,107 @@ function initApp() {
             box-shadow: 0 4px 8px rgba(0,0,0,0.1);
           }
           .btn-small:active {
-            transform: scale(0.98);
+            transform: translateY(1px) scale(0.98);
           }
+          .account-section .btn-small.btn-icon { background: #fff; color: #53657d; border: 1px solid #d9e2ec; }
+          .account-section .btn-small.btn-icon:hover { background: #eaf1f8; color: #145c99; }
+          button:focus-visible, input:focus-visible, select:focus-visible, .custom-select-trigger:focus-visible {
+            outline: 3px solid rgba(20, 92, 153, 0.35);
+            outline-offset: 2px;
+          }
+          .ui-icon { display: inline-block; vertical-align: -0.16em; flex: 0 0 auto; }
+          .spin-icon { animation: spin 1s linear infinite; }
+          .btn-small .ui-icon, .btn-action .ui-icon { vertical-align: -0.2em; }
+          .icon-toggle { display: inline-flex !important; align-items: center; justify-content: center; }
+          .icon-toggle svg { transition: transform 0.18s ease; }
+          .icon-toggle.expanded svg { transform: rotate(90deg); }
+          .folder-section {
+            margin-bottom: 8px;
+            font-size: 12px;
+            background: #f1f5fa;
+            border: 1px solid #e3eaf1;
+            border-radius: 9px;
+            padding: 8px 9px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+          }
+          .folder-section .folder-icon { color: #58738f; display: flex; }
+          .folder-section .folder-copy { flex: 1; min-width: 0; }
+          .folder-caption { display: block; color: #64748b; font-size: 10px; margin-bottom: 2px; }
+          .folder-text { display: block; max-width: 100%; font-size: 12px; font-weight: 600; color: #214f7a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .folder-section .btn-small { flex: 0 0 auto; }
+          .option-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+          .invoice-type-section {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px;
+            margin-bottom: 8px;
+            border: 1px solid #e3eaf1;
+            border-radius: 9px;
+            background: #f8fafc;
+          }
+          .invoice-type-caption { display: flex; align-items: center; gap: 5px; color: #52657a; font-size: 11px; padding: 0 5px; white-space: nowrap; }
+          .type-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; flex: 1; }
+          .type-radio { position: absolute; width: 1px; height: 1px; opacity: 0; }
+          .type-option { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 8px; border-radius: 6px; color: #64748b; cursor: pointer; font-size: 11px; transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+          .type-radio:checked + .type-option { background: #e6eff8; color: #145c99; box-shadow: inset 0 0 0 1px #cad9e8; font-weight: 600; }
+          .type-radio:focus-visible + .type-option { outline: 3px solid rgba(20, 92, 153, 0.35); outline-offset: 1px; }
+          .review-search-wrap { flex: 1; min-width: 160px; max-width: 300px; position: relative; }
+          .review-search-wrap .ui-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #8190a3; }
+          .review-search { width: 100%; min-height: 32px; padding: 6px 10px 6px 32px; border: 1px solid #d9e2ec; border-radius: 7px; background: #fff; font: inherit; font-size: 12px; }
+          .review-search:focus { border-color: #4c85bb; box-shadow: 0 0 0 3px rgba(20, 92, 153, 0.12); }
 
 
           .filter-tabs {
             display: flex;
+            flex-wrap: wrap;
+            align-items: center;
             gap: 6px;
             margin-bottom: 8px;
             border-bottom: 1px solid #e4e7ed;
-            padding-bottom: 6px;
+            padding-bottom: 8px;
           }
           .filter-tab {
-            padding: 4px 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 10px;
+            font-family: inherit;
             font-size: 11px;
-            border-radius: 14px;
-            background: #eef2fe;
-            color: #5a6a85;
+            line-height: 1.2;
+            border-radius: 7px;
+            background: #f1f5fa;
+            color: #52657a;
             cursor: pointer;
             border: 1px solid transparent;
-            transition: all 0.2s ease;
+            appearance: none;
+            transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
           }
-          .filter-tab:hover { background: #dce6ff; }
+          .filter-tab:hover { background: #e6edf5; }
           .filter-tab.active {
-            background: #0052cc;
-            color: white;
-            font-weight: bold;
+            background: #e6eff8;
+            border-color: #cbdceb;
+            color: #145c99;
+            font-weight: 600;
           }
 
           .bulk-toolbar {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
             gap: 8px;
-            padding: 6px 10px;
-            background: #f4f6fc;
-            border: 1px solid #e4e7ed;
-            border-radius: 6px;
+            padding: 8px 10px;
+            background: #f7f9fc;
+            border: 1px solid #e3eaf1;
+            border-radius: 8px;
             margin-bottom: 8px;
             font-size: 12px;
           }
+          .bulk-toolbar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+          .bulk-toolbar > span { white-space: nowrap; }
 
           .review-table-container {
             flex: 1;
@@ -438,12 +556,15 @@ function initApp() {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            width: 100%;
             background-color: #fff;
             border: 1px solid #dcdfe6;
             border-radius: 6px;
             padding: 6px 10px;
             color: #2c3e50;
             cursor: pointer;
+            font: inherit;
+            text-align: left;
             transition: all 0.2s ease;
           }
           .custom-select-trigger:hover { border-color: #0052cc; }
@@ -459,9 +580,10 @@ function initApp() {
           }
           .custom-select.open .custom-options { display: block; }
           .custom-option {
-            padding: 8px 10px; cursor: pointer; transition: background 0.1s;
+            padding: 8px 10px; cursor: pointer; transition: background 0.1s; outline: none;
           }
           .custom-option:hover { background: #f4f6fc; }
+          .custom-option:focus-visible { background: #eaf1f8; outline: 2px solid #4c85bb; outline-offset: -2px; }
           .custom-option.selected { background: #eef2fe; color: #0052cc; font-weight: 600; }
           .review-table select {
             width: 100%;
@@ -504,7 +626,6 @@ function initApp() {
           .stat-label {
             color: #909399;
             font-size: 11px;
-            text-transform: uppercase;
             margin-bottom: 2px;
           }
           .stat-value {
@@ -520,16 +641,19 @@ function initApp() {
             flex: 1;
             padding: 10px 8px;
             font-size: 12px;
+            font-family: inherit;
             font-weight: 600;
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.18s ease;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             gap: 4px;
           }
+          button.btn-action:not(:disabled):hover { transform: translateY(-1px); filter: brightness(0.96); box-shadow: 0 4px 10px rgba(15, 47, 80, 0.12); }
+          button.btn-action:not(:disabled):active { transform: translateY(1px) scale(0.99); }
           .btn-start { background: #28c76f; color: white; }
           .btn-start:hover:not(:disabled) { background: #20a65b; }
           .btn-pause { background: #007aff; color: white; }
@@ -543,21 +667,23 @@ function initApp() {
             flex: 1;
             min-height: 0;
             overflow-y: auto;
-            background: #1a1a2e;
-            color: #e0e0e0;
+            background: #f7f9fc;
+            color: #475569;
             font-family: inherit;
             font-size: 11px;
             padding: 10px;
-            border-radius: 6px;
-            box-shadow: inset 0 2px 6px rgba(0,0,0,0.3);
+            border: 1px solid #e3eaf1;
+            border-radius: 9px;
+            box-shadow: inset 0 1px 3px rgba(20, 49, 78, 0.04);
           }
           .log-item {
             margin-bottom: 4px;
-            line-height: 1.4;
+            line-height: 1.45;
           }
-          .log-item.success { color: #39ff14; }
-          .log-item.error { color: #ff4d4f; }
-          .log-item.warning { color: #ffc107; }
+          .log-item.success { color: #207347; }
+          .log-item.error { color: #ad3d3d; }
+          .log-item.warning { color: #946200; }
+          .log-item.info { color: #345e85; }
 
           /* Toast notification - frosted surface matching app panel */
           .toast-container {
@@ -710,16 +836,18 @@ function initApp() {
           }
           @media (prefers-reduced-motion: reduce) {
             .toast, .toast.toast-hiding { animation: none; }
+            *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
           }
 
           /* Update banner */
           .update-banner {
             display: none;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            background: #eef4fa;
             padding: 10px 12px;
             font-size: 12px;
-            color: #e0e0e0;
-            border-top: 1px solid rgba(255,255,255,0.06);
+            color: #334155;
+            border-top: 1px solid #dce6f0;
+            border-bottom: 1px solid #dce6f0;
           }
           .update-banner.visible { display: block; }
           .version-badge {
@@ -731,21 +859,24 @@ function initApp() {
             margin-left: 6px;
           }
           .organize-section {
-            margin-bottom: 10px;
+            margin-bottom: 0;
+            flex: 1;
+            min-width: 0;
             font-size: 11px;
             display: flex;
             align-items: center;
-            gap: 6px;
-            padding: 6px 10px;
-            background: #f0f7ff;
-            border-radius: 6px;
-            border: 1px dashed #b0c4de;
+            gap: 7px;
+            padding: 6px 8px;
+            background: #f1f5fa;
+            border-radius: 8px;
+            border: 1px solid #e3eaf1;
           }
           .organize-section input[type="checkbox"] {
-            accent-color: #0052cc;
+            accent-color: #145c99;
             cursor: pointer;
-            width: 14px;
-            height: 14px;
+            width: 15px;
+            height: 15px;
+            flex: 0 0 auto;
           }
           .detail-table {
             width: 100%;
@@ -759,30 +890,48 @@ function initApp() {
             text-align: left;
           }
           .detail-table th {
-            background: #f4f6fc;
+            background: #f1f5fa;
             font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+          }
+          .detail-table tbody tr:hover { background-color: #f7f9fc; }
+          .btn-small:disabled, .btn-action:disabled { box-shadow: none; transform: none; filter: none; }
+          @media (max-width: 400px) {
+            .body { padding: 10px; }
+            .account-section { gap: 4px; padding: 6px; }
+            .account-section .btn-small { padding-left: 7px; padding-right: 7px; }
+            .account-section .btn-icon .btn-label { display: none; }
+            .account-section .btn-icon { width: 34px; min-width: 34px; padding: 0; }
+            .folder-section { padding: 7px; gap: 6px; }
+            .option-row { margin-bottom: 6px; }
+            .invoice-type-caption { font-size: 10px; gap: 3px; padding: 0 2px; }
+            .type-option { padding: 6px 5px; gap: 3px; }
+            .btn-action { font-size: 11px !important; padding-left: 4px !important; padding-right: 4px !important; }
           }
         </style>
         <div class="panel" id="main-panel">
           <div class="header">
             <div style="display: flex; align-items: center;">
-              <span>Công Cụ Tải Hóa Đơn</span>
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; margin-right: 9px; border-radius: 9px; color: #145c99; background: #e8f0f8;">${uiIcon('fileCheck', 18)}</span>
+              <span>Công cụ tải hóa đơn</span>
               <span class="version-badge" id="version-badge">v--</span>
             </div>
-            <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <button class="btn-minimize" id="btn-minimize" title="Thu nhỏ (Ctrl+Shift+M)" aria-label="Thu nhỏ công cụ">
+              ${uiIcon('minus', 16)}
             </button>
           </div>
 
           <div id="update-banner" class="update-banner">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-              <div style="font-weight: 600; color: #60a5fa;">🔄 Có bản cập nhật mới!</div>
-              <button style="background: transparent; border: none; color: #8899a6; cursor: pointer;" id="update-dismiss">✕</button>
+              <div style="font-weight: 600; color: #145c99; display: inline-flex; align-items: center; gap: 6px;">${uiIcon('refresh', 15)} Có bản cập nhật mới</div>
+              <button class="btn-minimize" style="color: #8899a6;" id="update-dismiss" title="Ẩn thông báo">${uiIcon('close', 14)}</button>
             </div>
-            <div style="font-size: 11px; color: #a0b0c0; margin-bottom: 8px;" id="update-msg">Phiên bản mới đã sẵn sàng.</div>
+            <div style="font-size: 11px; color: #64748b; margin-bottom: 8px;" id="update-msg">Phiên bản mới đã sẵn sàng.</div>
             <div style="display: flex; gap: 6px;" id="update-actions">
-              <button class="btn-small" id="update-download-btn" style="flex:1;">⬇ Tải cập nhật</button>
-              <button class="btn-small" id="update-later-btn" style="background: rgba(255,255,255,0.15);">Để sau</button>
+              <button class="btn-small" id="update-download-btn" style="flex:1;">${uiIcon('download')} Tải cập nhật</button>
+              <button class="btn-small" id="update-later-btn" style="background: #e1e9f1; color: #52657a;">Để sau</button>
             </div>
             <div id="update-progress" style="display:none; margin-top: 8px;">
               <div class="progress-bar-bg"><div class="progress-bar-fill" id="update-progress-bar"></div></div>
@@ -791,42 +940,51 @@ function initApp() {
           </div>
 
           <div class="body">
-            <div class="folder-title">Tài khoản & Thư mục</div>
+            <div class="folder-title">Tài khoản và thư mục lưu</div>
             <div class="account-section">
               <div class="custom-select" id="account-select-wrapper">
-                <div class="custom-select-trigger" id="account-select-trigger">
+                <div class="custom-select-trigger" id="account-select-trigger" role="combobox" tabindex="0" aria-label="Chọn tài khoản" aria-haspopup="listbox" aria-expanded="false" aria-controls="account-select-options">
                   <span id="account-select-label" style="text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">-- Chọn tài khoản --</span>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5a6a85" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  ${uiIcon('chevronDown', 14)}
                 </div>
-                <div class="custom-options" id="account-select-options"></div>
+                <div class="custom-options" id="account-select-options" role="listbox" aria-label="Tài khoản đã lưu"></div>
               </div>
               <input type="hidden" id="account-select" value="">
-              <button class="btn-small" id="btn-fill-account" title="Điền form">Điền form</button>
-              <button class="btn-small" id="btn-manage-accounts" title="Quản lý">Quản lý</button>
-              <button class="btn-small" id="btn-history" title="Lịch sử tải">Lịch sử</button>
+              <button class="btn-small" id="btn-fill-account" title="Điền tài khoản vào trang hóa đơn">${uiIcon('key', 15)} Điền</button>
+              <button class="btn-small btn-icon" id="btn-manage-accounts" title="Quản lý tài khoản" aria-label="Quản lý tài khoản">${uiIcon('users', 14)} <span class="btn-label">Quản lý</span></button>
+              <button class="btn-small btn-icon" id="btn-history" title="Mở lịch sử tải và xuất" aria-label="Mở lịch sử">${uiIcon('clock', 14)} <span class="btn-label">Lịch sử</span></button>
             </div>
 
             <div class="folder-section">
-              <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
-              <button class="btn-small" id="btn-change-folder">Đổi</button>
+              <span class="folder-icon">${uiIcon('folderOpen', 18)}</span>
+              <div class="folder-copy">
+                <span class="folder-caption">Thư mục lưu hóa đơn</span>
+                <span class="folder-text" id="folder-path" title="${initialFolder}">${initialFolder}</span>
+              </div>
+              <button class="btn-small" id="btn-change-folder" title="Chọn thư mục lưu">Đổi ${uiIcon('arrowRight', 14)}</button>
             </div>
 
-            <div class="organize-section">
-              <input type="checkbox" id="chk-organize-mst" />
-              <label for="chk-organize-mst" style="cursor: pointer; color: #2c3e50; font-weight: 500;">📁 Tạo thư mục riêng theo MST</label>
+            <div class="option-row">
+              <div class="organize-section">
+                ${uiIcon('folderTree', 16)}
+                <input type="checkbox" id="chk-organize-mst" />
+                <label for="chk-organize-mst" style="cursor: pointer; color: #334155; font-weight: 500;">Tách thư mục theo MST</label>
+              </div>
             </div>
 
-            <div class="organize-section" style="background: #fffcf0; border-color: #ffd89b;">
-              <span style="font-weight: 600; font-size: 11px;">Loại Hóa Đơn:</span>
-              <input type="radio" id="rad-invoice-buying" name="rad-invoice-type" value="buying" checked style="cursor: pointer; accent-color: #ff9f43;" />
-              <label for="rad-invoice-buying" style="cursor: pointer; font-weight: 500;">Mua vào</label>
-              <input type="radio" id="rad-invoice-selling" name="rad-invoice-type" value="selling" style="cursor: pointer; accent-color: #ff9f43; margin-left: 8px;" />
-              <label for="rad-invoice-selling" style="cursor: pointer; font-weight: 500;">Bán ra</label>
+            <div class="invoice-type-section">
+              <span class="invoice-type-caption">${uiIcon('fileCheck', 15)} Loại hóa đơn</span>
+              <div class="type-switch" role="radiogroup" aria-label="Loại hóa đơn">
+                <input class="type-radio" type="radio" id="rad-invoice-buying" name="rad-invoice-type" value="buying" checked />
+                <label class="type-option" for="rad-invoice-buying">${uiIcon('download', 14)} Mua vào</label>
+                <input class="type-radio" type="radio" id="rad-invoice-selling" name="rad-invoice-type" value="selling" />
+                <label class="type-option" for="rad-invoice-selling">${uiIcon('arrowRight', 14)} Bán ra</label>
+              </div>
             </div>
 
             <!-- Financial Summary Card -->
             <div class="financial-card">
-              <div class="financial-title">💰 Giá trị hóa đơn đã tải</div>
+              <div class="financial-title">${uiIcon('activity', 14)} Giá trị hóa đơn đã tải</div>
               <div class="financial-grid">
                 <div>
                   <div class="financial-lbl">Chưa thuế</div>
@@ -850,9 +1008,9 @@ function initApp() {
                   <div class="stat-label">Trạng thái</div>
                   <div class="status-badge idle" id="lbl-status-badge">Sẵn sàng</div>
                 </div>
-                <div class="progress-bar-bg" style="position: relative;">
+              <div class="progress-bar-bg" style="position: relative;" role="progressbar" aria-label="Tiến trình tải hóa đơn" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                   <div class="progress-bar-fill" id="progress-bar-fill"></div>
-                  <div id="progress-text-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; mix-blend-mode: difference; color: white;">0%</div>
+                <div id="progress-text-overlay" aria-hidden="true" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; mix-blend-mode: difference; color: white;">0%</div>
                 </div>
               </div>
               <div class="stat-card">
@@ -876,23 +1034,23 @@ function initApp() {
             <!-- Retry Bar (Hidden by default) -->
             <div id="retry-bar" style="display: none; margin-bottom: 8px;">
               <button class="btn-action" id="btn-retry-failed" style="background: #ff9f43; color: white; width: 100%; padding: 8px; font-size: 12px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer;">
-                🔄 Tải lại <span id="lbl-failed-count">0</span> dòng bị lỗi
+                ${uiIcon('refresh', 15)} Tải lại <span id="lbl-failed-count">0</span> dòng bị lỗi
               </button>
             </div>
 
             <!-- Continue Bar for Format / Template Selection Modal -->
             <div id="continue-bar" style="display: none; margin-bottom: 8px;">
               <button class="btn-action" id="btn-continue-review" style="background: linear-gradient(135deg, #0052cc, #007aff); color: white; width: 100%; padding: 10px 8px; font-size: 13px; font-weight: bold; border: none; border-radius: 6px; cursor: pointer; box-shadow: 0 4px 12px rgba(0, 82, 204, 0.3); display: flex; align-items: center; justify-content: center; gap: 6px;">
-                <span>➡️</span> <span>Tiếp tục chọn mẫu Excel (<span id="lbl-pending-review-count">0</span> HĐ)</span>
+                ${uiIcon('arrowRight', 16)} <span>Tiếp tục chọn mẫu Excel (<span id="lbl-pending-review-count">0</span> HĐ)</span>
               </button>
             </div>
 
             <!-- Action Controls -->
             <div class="actions">
-              <button class="btn-action btn-start" id="btn-start" title="Tải về"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Tải về</button>
-              <button class="btn-action btn-pause" id="btn-pause" disabled title="Tạm dừng/Tiếp tục"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Tạm dừng</button>
-              <button class="btn-action btn-skip" id="btn-skip" disabled title="Bỏ qua dòng"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg> Bỏ qua</button>
-              <button class="btn-action btn-stop" id="btn-stop" disabled title="Dừng quy trình"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg> Dừng</button>
+              <button class="btn-action btn-start" id="btn-start" title="Bắt đầu tải hóa đơn (Ctrl+Shift+S)">${uiIcon('play')} Tải về</button>
+              <button class="btn-action btn-pause" id="btn-pause" disabled title="Tạm dừng hoặc tiếp tục (Ctrl+Shift+P)">${uiIcon('pause')} Tạm dừng</button>
+              <button class="btn-action btn-skip" id="btn-skip" disabled title="Bỏ qua hóa đơn hiện tại (Ctrl+Shift+N)">${uiIcon('skip')} Bỏ qua</button>
+              <button class="btn-action btn-stop" id="btn-stop" disabled title="Dừng tải hóa đơn (Ctrl+Shift+X)">${uiIcon('stop')} Dừng</button>
             </div>
 
             <div class="log-panel" id="log-container">
@@ -907,22 +1065,25 @@ function initApp() {
         </div>
 
         <!-- Account Modal -->
-        <div id="account-modal" class="modal">
+        <div id="account-modal" class="modal" role="dialog" aria-modal="true" aria-label="Quản lý tài khoản">
           <div class="modal-content">
-            <div class="modal-header" style="font-weight: bold; margin-bottom: 5px; padding: 5px 0;">Quản lý tài khoản</div>
-            <input type="text" id="acc-mst" placeholder="Mã số thuế" />
-            <input type="password" id="acc-pwd" placeholder="Mật khẩu" />
-            <input type="text" id="acc-name" placeholder="Tên công ty (tùy chọn)" />
-            <div style="display: flex; gap: 5px;">
-              <button class="btn-small" id="btn-save-acc" style="flex: 1; background: #28c76f;">Lưu / Thêm</button>
-              <button class="btn-small" id="btn-close-acc" style="flex: 1; background: #6c757d;">Đóng</button>
+            <div class="modal-header" style="font-weight: 700; color: #1e3f5f; margin-bottom: 5px; padding: 5px 0;">Quản lý tài khoản</div>
+            <label class="form-label" for="acc-mst">Mã số thuế</label>
+            <input type="text" id="acc-mst" placeholder="Nhập mã số thuế" aria-label="Mã số thuế" autocomplete="username" />
+            <label class="form-label" for="acc-pwd">Mật khẩu</label>
+            <input type="password" id="acc-pwd" placeholder="Nhập mật khẩu" aria-label="Mật khẩu" autocomplete="current-password" />
+            <label class="form-label" for="acc-name">Tên công ty (tùy chọn)</label>
+            <input type="text" id="acc-name" placeholder="Nhập tên công ty" aria-label="Tên công ty (tùy chọn)" />
+            <div style="display: flex; gap: 7px;">
+              <button class="btn-small" id="btn-save-acc" style="flex: 1; background: #238354;">${uiIcon('check')} Lưu tài khoản</button>
+              <button class="btn-small" id="btn-close-acc" style="background: #64748b;">Đóng</button>
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
-              <div style="font-weight: bold; font-size: 11px;">Danh sách đã lưu:</div>
+              <div style="font-weight: 600; font-size: 11px; color: #475569;">Tài khoản đã lưu</div>
               <div style="display: flex; gap: 4px;">
-                <button class="btn-small" id="btn-download-template" style="background: #ff9f43;" title="Tải mẫu Excel để nhập tài khoản">Mẫu Excel</button>
-                <button class="btn-small" id="btn-import-excel" style="background: #0052cc;" title="Nhập danh sách tài khoản từ file Excel">Nhập Excel</button>
-                <button class="btn-small" id="btn-export-excel" style="background: #28c76f;" title="Xuất danh sách tài khoản ra file Excel">Xuất Excel</button>
+                <button class="btn-small" id="btn-download-template" style="background: #64748b;" title="Tải mẫu Excel để nhập tài khoản">${uiIcon('fileSpreadsheet', 14)} Mẫu</button>
+                <button class="btn-small" id="btn-import-excel" style="background: #145c99;" title="Nhập danh sách tài khoản từ file Excel">${uiIcon('upload', 14)} Nhập</button>
+                <button class="btn-small" id="btn-export-excel" style="background: #238354;" title="Xuất danh sách tài khoản ra file Excel">${uiIcon('fileSpreadsheet', 14)} Xuất</button>
               </div>
             </div>
             <ul id="acc-list" class="acc-list"></ul>
@@ -930,38 +1091,44 @@ function initApp() {
         </div>
 
         <!-- Review Modal with Confidence Badges, Bulk Edit, Quick Filters -->
-        <div id="review-modal" class="modal">
+        <div id="review-modal" class="modal" role="dialog" aria-modal="true" aria-label="Xác nhận mẫu Excel MISA">
           <div class="modal-content">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; padding: 5px 0;">
               <div style="pointer-events: none;">
-                <div style="font-weight: bold; font-size: 15px; color: #0052cc;">Xác nhận Mẫu Excel MISA</div>
-                <div style="font-size: 11px; color: #5a6a85;">Kiểm tra và chọn mẫu phù hợp trước khi xuất MISA.</div>
+                <div style="font-weight: 700; font-size: 15px; color: #1e3f5f;">Xác nhận mẫu Excel MISA</div>
+                <div style="font-size: 11px; color: #64748b;">Kiểm tra mẫu và đối tác, sau đó xuất các hóa đơn đã tải.</div>
               </div>
               <span class="version-badge" id="review-count-badge" style="background: #0052cc; color: white; font-size: 11px; padding: 4px 10px;">0 hóa đơn</span>
             </div>
 
             <!-- Filter Tabs -->
-            <div class="filter-tabs" id="review-filter-tabs">
-              <div class="filter-tab active" data-filter="all">Tất cả (<span id="cnt-all">0</span>)</div>
-              <div class="filter-tab" data-filter="goods">📦 Hàng hóa (<span id="cnt-goods">0</span>)</div>
-              <div class="filter-tab" data-filter="services">🛠 Dịch vụ (<span id="cnt-services">0</span>)</div>
+            <div class="filter-tabs" id="review-filter-tabs" role="group" aria-label="Lọc hóa đơn theo loại">
+              <button type="button" class="filter-tab active" data-filter="all" aria-pressed="true">${uiIcon('list', 14)} Tất cả (<span id="cnt-all">0</span>)</button>
+              <button type="button" class="filter-tab" data-filter="goods" aria-pressed="false">${uiIcon('folder', 14)} Hàng hóa (<span id="cnt-goods">0</span>)</button>
+              <button type="button" class="filter-tab" data-filter="services" aria-pressed="false">${uiIcon('wrench', 14)} Dịch vụ (<span id="cnt-services">0</span>)</button>
+              <label class="review-search-wrap">
+                ${uiIcon('search', 15)}
+                <input id="review-search" class="review-search" type="search" placeholder="Tìm số hóa đơn hoặc đối tác" aria-label="Tìm hóa đơn theo số hoặc tên đối tác" />
+              </label>
             </div>
 
             <!-- Bulk Edit Toolbar -->
             <div class="bulk-toolbar">
-              <input type="checkbox" id="chk-review-select-all" style="accent-color: #0052cc; cursor: pointer; width: 15px; height: 15px;" />
-              <span style="font-weight: 500;">Chọn tất cả</span>
+              <label for="chk-review-select-all" style="font-weight: 500;">
+                <input type="checkbox" id="chk-review-select-all" style="accent-color: #145c99; cursor: pointer; width: 15px; height: 15px;" />
+                Chọn các dòng đang hiển thị
+              </label>
               <div style="flex: 1;"></div>
-              <span style="color: #5a6a85;">Đổi hàng loạt:</span>
+              <span id="bulk-template-label" style="color: #52657a;">Đổi mẫu cho các dòng đã chọn</span>
               <select id="bulk-template-select" style="font-size: 13px; font-weight: 600; color: #0052cc; background-color: #ffffff; border: 1.5px solid #0052cc; border-radius: 6px; padding: 6px 10px; min-width: 250px; max-width: 350px; cursor: pointer;"></select>
-              <button class="btn-small" id="btn-apply-bulk" style="background: #0052cc; padding: 6px 12px; font-weight: bold;">Áp dụng</button>
+              <button class="btn-small" id="btn-apply-bulk" style="background: #145c99; padding: 6px 12px; font-weight: bold;">${uiIcon('check', 14)} Áp dụng</button>
             </div>
 
             <div class="review-table-container">
               <table class="review-table" id="review-table">
                 <thead>
                   <tr>
-                    <th style="width: 35px; text-align: center;">✓</th>
+                    <th style="width: 35px; text-align: center;">${uiIcon('check', 14)}</th>
                     <th style="width: 40px;">STT</th>
                     <th style="width: 95px;">Số HĐ</th>
                     <th style="min-width: 160px;">Đối tác</th>
@@ -977,38 +1144,38 @@ function initApp() {
             <div style="display: flex; gap: 8px; justify-content: space-between; align-items: center; margin-top: 6px;">
               <div style="font-size: 12px; color: #5a6a85;" id="review-summary-info">Tổng tiền chưa thuế: <b>0 đ</b> | Thuế GTGT: <b>0 đ</b></div>
               <div style="display: flex; gap: 8px;">
-                <button class="btn-small" id="btn-cancel-review" style="background: #6c757d; padding: 6px 15px;">Đóng</button>
-                <button class="btn-small" id="btn-export-review" style="background: #28c76f; padding: 6px 18px; font-weight: bold;">Xuất Tất Cả Excel</button>
+                <button class="btn-small" id="btn-cancel-review" style="background: #64748b; padding: 6px 15px;">Đóng</button>
+                <button class="btn-small" id="btn-export-review" style="background: #238354; padding: 6px 18px; font-weight: bold;">${uiIcon('fileSpreadsheet', 15)} Xuất tất cả</button>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Detail Modal for Quick View -->
-        <div id="detail-modal" class="modal">
+        <div id="detail-modal" class="modal" role="dialog" aria-modal="true" aria-label="Chi tiết hóa đơn">
           <div class="modal-content" style="width: 90%; max-width: 780px; height: 80vh; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
             <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e4e7ed; padding-bottom: 8px;">
               <div style="pointer-events: none;">
-                <div style="font-weight: bold; font-size: 16px; color: #0052cc;" id="detail-modal-title">Chi Tiết Hóa Đơn</div>
+                <div style="font-weight: 700; font-size: 16px; color: #1e3f5f;" id="detail-modal-title">Chi tiết hóa đơn</div>
                 <div style="font-size: 12px; color: #5a6a85;" id="detail-modal-subtitle"></div>
               </div>
-              <button class="btn-small" id="btn-close-detail" style="background: #6c757d;">✕ Đóng</button>
+              <button class="btn-small" id="btn-close-detail" style="background: #64748b;">${uiIcon('close', 14)} Đóng</button>
             </div>
             <div id="detail-modal-body" style="flex: 1; overflow-y: auto; padding-top: 10px;"></div>
           </div>
         </div>
 
         <!-- History Modal -->
-        <div id="history-modal" class="modal">
+        <div id="history-modal" class="modal" role="dialog" aria-modal="true" aria-label="Lịch sử tải và xuất hóa đơn">
           <div class="modal-content" style="width: 90%; max-width: 850px; height: 85vh; max-height: 90vh; display: flex; flex-direction: column;">
-            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #e4e7ed; padding-bottom: 8px;">
+            <div class="modal-header" style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #e4e7ed; padding-bottom: 8px;">
                <div style="pointer-events: none;">
-                 <div style="font-weight: bold; font-size: 16px; color: #0052cc;">Lịch Sử Tải & Xuất MISA</div>
-                 <div style="font-size: 12px; color: #5a6a85;">Danh sách các lần tải & xuất hóa đơn.</div>
+                 <div style="font-weight: 700; font-size: 16px; color: #1e3f5f;">Lịch sử tải và xuất MISA</div>
+                 <div style="font-size: 12px; color: #64748b;">Chọn một lượt tải để xem hóa đơn và xuất lại theo loại đã chọn.</div>
                </div>
                <div style="display: flex; gap: 8px;">
-                 <button class="btn-small" id="btn-clear-history" style="background: #ea5455;">Xóa lịch sử</button>
-                 <button class="btn-small" id="btn-close-history" style="background: #6c757d;">Đóng</button>
+                 <button class="btn-small" id="btn-clear-history" style="background: #b54c4c;">${uiIcon('trash', 14)} Xóa</button>
+                 <button class="btn-small" id="btn-close-history" style="background: #64748b;">${uiIcon('close', 14)} Đóng</button>
                </div>
             </div>
             <div style="flex:1; overflow-y: auto;">
@@ -1103,8 +1270,12 @@ function initApp() {
 
       // Update button listeners
       this.updateDownloadBtn.addEventListener('click', () => {
+        if (this.updateDownloadBtn.dataset.action === 'install') {
+          window.electronAPI.installUpdate();
+          return;
+        }
         this.updateDownloadBtn.disabled = true;
-        this.updateDownloadBtn.textContent = 'Đang tải...';
+        this.updateDownloadBtn.innerHTML = `${loadingIcon()} Đang tải...`;
         window.electronAPI.downloadUpdate();
       });
 
@@ -1126,6 +1297,16 @@ function initApp() {
       trigger.addEventListener('click', (e) => {
         e.stopPropagation();
         wrapper.classList.toggle('open');
+        trigger.setAttribute('aria-expanded', String(wrapper.classList.contains('open')));
+      });
+
+      trigger.addEventListener('keydown', (e) => {
+        if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+        e.preventDefault();
+        wrapper.classList.add('open');
+        trigger.setAttribute('aria-expanded', 'true');
+        const options = optionsContainer.querySelectorAll('.custom-option');
+        if (options.length) options[e.key === 'ArrowUp' ? options.length - 1 : 0].focus();
       });
 
       optionsContainer.addEventListener('click', (e) => {
@@ -1135,15 +1316,49 @@ function initApp() {
           const text = option.textContent;
           this.accountSelect.value = value;
           label.textContent = text;
-          wrapper.querySelectorAll('.custom-option').forEach(opt => opt.classList.remove('selected'));
+          wrapper.querySelectorAll('.custom-option').forEach(opt => {
+            opt.classList.remove('selected');
+            opt.setAttribute('aria-selected', 'false');
+          });
           option.classList.add('selected');
+          option.setAttribute('aria-selected', 'true');
           wrapper.classList.remove('open');
+          trigger.setAttribute('aria-expanded', 'false');
+          trigger.focus();
+        }
+      });
+
+      optionsContainer.addEventListener('keydown', (e) => {
+        const option = e.target.closest('.custom-option');
+        if (!option) return;
+        const options = Array.from(optionsContainer.querySelectorAll('.custom-option'));
+        const index = options.indexOf(option);
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const direction = e.key === 'ArrowDown' ? 1 : -1;
+          options[(index + direction + options.length) % options.length]?.focus();
+        } else if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          option.click();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          wrapper.classList.remove('open');
+          trigger.setAttribute('aria-expanded', 'false');
+          trigger.focus();
+        }
+      });
+
+      this.shadow.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target)) {
+          wrapper.classList.remove('open');
+          trigger.setAttribute('aria-expanded', 'false');
         }
       });
 
       document.addEventListener('click', (e) => {
-        if (!e.composedPath().includes(wrapper)) {
+        if (!e.composedPath().includes(this.container)) {
           wrapper.classList.remove('open');
+          trigger.setAttribute('aria-expanded', 'false');
         }
       });
 
@@ -1166,10 +1381,12 @@ function initApp() {
         const history = await window.electronAPI.getHistory();
         this.renderHistory(history);
         this.historyModal.style.display = 'flex';
+        this.btnCloseHistory.focus();
       });
 
       this.btnCloseHistory.addEventListener('click', () => {
         this.historyModal.style.display = 'none';
+        this.btnHistory.focus();
       });
 
       this.btnClearHistory.addEventListener('click', async () => {
@@ -1184,26 +1401,28 @@ function initApp() {
       this.btnManageAccounts.addEventListener('click', () => {
         this.accountModal.style.display = 'flex';
         this.renderAccountList();
+        this.shadow.getElementById('acc-mst').focus();
       });
 
       this.btnCloseAcc.addEventListener('click', () => {
         this.accountModal.style.display = 'none';
+        this.btnManageAccounts.focus();
       });
 
       this.btnDownloadTemplate.addEventListener('click', async () => {
-        this.btnDownloadTemplate.textContent = '...';
+        this.btnDownloadTemplate.innerHTML = `${loadingIcon()} Đang tải`;
         this.btnDownloadTemplate.disabled = true;
         try {
           const res = await window.electronAPI.downloadAccountTemplate();
           if (res.success) {
-            this.showToast('Tải mẫu Excel thành công!', {
+            this.showToast('Đã tải mẫu Excel.', {
               actions: [
                 {
-                  label: '📂 Mở file',
+                  label: 'Mở file',
                   onClick: () => window.electronAPI.openFile(res.filePath)
                 },
                 {
-                  label: '📁 Mở thư mục',
+                  label: 'Mở thư mục',
                   onClick: () => window.electronAPI.openFolder(res.dirPath)
                 }
               ]
@@ -1214,18 +1433,18 @@ function initApp() {
         } catch (e) {
           this.showToast(`Lỗi: ${e.message}`, { type: 'error' });
         } finally {
-          this.btnDownloadTemplate.textContent = 'Mẫu Excel';
+          this.btnDownloadTemplate.innerHTML = `${uiIcon('fileSpreadsheet', 14)} Mẫu`;
           this.btnDownloadTemplate.disabled = false;
         }
       });
 
       this.btnImportExcel.addEventListener('click', async () => {
-        this.btnImportExcel.textContent = '...';
+        this.btnImportExcel.innerHTML = `${loadingIcon()} Đang nhập`;
         this.btnImportExcel.disabled = true;
         try {
           const res = await window.electronAPI.importExcelAccounts();
           if (res.success) {
-            this.showToast(`Nhập thành công ${res.count} tài khoản!`);
+            this.showToast(`Đã nhập ${res.count} tài khoản.`);
             this.loadAccounts();
           } else if (res.reason !== 'canceled') {
             this.showToast(`Lỗi: ${res.reason}`, { type: 'error' });
@@ -1233,21 +1452,21 @@ function initApp() {
         } catch (e) {
           this.showToast(`Lỗi: ${e.message}`, { type: 'error' });
         } finally {
-          this.btnImportExcel.textContent = 'Nhập Excel';
+          this.btnImportExcel.innerHTML = `${uiIcon('upload', 14)} Nhập`;
           this.btnImportExcel.disabled = false;
         }
       });
 
       this.btnExportExcel = this.shadow.getElementById('btn-export-excel');
       this.btnExportExcel.addEventListener('click', async () => {
-        this.btnExportExcel.textContent = '...';
+        this.btnExportExcel.innerHTML = `${loadingIcon()} Đang xuất`;
         this.btnExportExcel.disabled = true;
         try {
           const res = await window.electronAPI.exportAccountsExcel();
           if (res.success) {
-            this.showToast('Xuất tài khoản thành công!', {
+            this.showToast('Đã xuất danh sách tài khoản.', {
               actions: [{
-                label: '📂 Mở thư mục',
+                label: 'Mở thư mục',
                 onClick: () => window.electronAPI.openFolder(res.dirPath)
               }]
             });
@@ -1257,7 +1476,7 @@ function initApp() {
         } catch (e) {
           this.showToast(`Lỗi: ${e.message}`, { type: 'error' });
         } finally {
-          this.btnExportExcel.textContent = 'Xuất Excel';
+          this.btnExportExcel.innerHTML = `${uiIcon('fileSpreadsheet', 14)} Xuất`;
           this.btnExportExcel.disabled = false;
         }
       });
@@ -1276,7 +1495,7 @@ function initApp() {
         this.shadow.getElementById('acc-mst').value = '';
         this.shadow.getElementById('acc-pwd').value = '';
         this.shadow.getElementById('acc-name').value = '';
-        this.showToast('Lưu tài khoản thành công!');
+        this.showToast('Đã lưu tài khoản.');
         this.loadAccounts();
       });
 
@@ -1329,11 +1548,19 @@ function initApp() {
       });
       this.chkOrganizeMst.addEventListener('change', () => {
         window.electronAPI.setFolderOrganization(this.chkOrganizeMst.checked);
-        this.log(this.chkOrganizeMst.checked ? '📁 Bật tạo thư mục theo MST' : '📁 Tắt tạo thư mục theo MST');
+        this.log(this.chkOrganizeMst.checked ? 'Đã bật tách thư mục theo MST.' : 'Đã tắt tách thư mục theo MST.');
       });
 
       // Shortcut handler
       document.addEventListener('keydown', (e) => {
+        const eventTarget = e.composedPath()[0] || e.target;
+        const activeElement = this.shadow.activeElement;
+        const isTyping = [eventTarget, activeElement].some(target =>
+          target && target.nodeType === 1 && (target.matches('input, textarea, select, [contenteditable="true"]') || target.closest('input, textarea, select, [contenteditable="true"]'))
+        );
+        const hasOpenModal = Array.from(this.shadow.querySelectorAll('.modal')).some(modal => modal.style.display === 'flex');
+        if (isTyping || hasOpenModal) return;
+
         if (e.ctrlKey && e.shiftKey) {
           switch (e.code) {
             case 'KeyS':
@@ -1374,12 +1601,15 @@ function initApp() {
       const optionsContainer = this.shadow.getElementById('account-select-options');
       const label = this.shadow.getElementById('account-select-label');
 
-      optionsContainer.innerHTML = '<div class="custom-option selected" data-value="">-- Chọn tài khoản --</div>';
+      optionsContainer.innerHTML = '<div class="custom-option selected" data-value="" role="option" tabindex="0" aria-selected="true">-- Chọn tài khoản --</div>';
 
       this.accounts.forEach(acc => {
         const div = document.createElement('div');
         div.className = 'custom-option';
         div.dataset.value = acc.id;
+        div.setAttribute('role', 'option');
+        div.setAttribute('tabindex', '0');
+        div.setAttribute('aria-selected', 'false');
         div.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
         optionsContainer.appendChild(div);
       });
@@ -1389,7 +1619,15 @@ function initApp() {
       if (!stillExists) {
         this.accountSelect.value = '';
         label.textContent = '-- Chọn tài khoản --';
+      } else {
+        const selectedOption = Array.from(optionsContainer.querySelectorAll('.custom-option')).find(option => option.dataset.value === currentVal);
+        if (selectedOption) label.textContent = selectedOption.textContent;
       }
+      optionsContainer.querySelectorAll('.custom-option').forEach(option => {
+        const isSelected = option.dataset.value === this.accountSelect.value;
+        option.classList.toggle('selected', isSelected);
+        option.setAttribute('aria-selected', String(isSelected));
+      });
 
       if (this.accountModal.style.display === 'flex') {
         this.renderAccountList();
@@ -1397,8 +1635,18 @@ function initApp() {
     }
 
     renderHistory(rawHistory) {
-      if (!rawHistory || rawHistory.length === 0) {
-        this.historyTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #909399; padding: 20px;">Chưa có lịch sử xuất MISA</td></tr>';
+      const hasHistory = Array.isArray(rawHistory) && rawHistory.length > 0;
+      this.btnClearHistory.disabled = !hasHistory;
+
+      if (!hasHistory) {
+        this.historySessions = [];
+        this.historyTbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #64748b; padding: 34px 16px;">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 7px;">
+            <span style="display: grid; place-items: center; width: 42px; height: 42px; color: #58738f; background: #f1f5fa; border-radius: 12px;">${uiIcon('clock', 21)}</span>
+            <strong style="color: #334155;">Chưa có lịch sử tải</strong>
+            <span>Hóa đơn đã xuất sẽ xuất hiện tại đây.</span>
+          </div>
+        </td></tr>`;
         return;
       }
 
@@ -1445,12 +1693,35 @@ function initApp() {
 
       // Sắp xếp các lần tải mới nhất lên đầu
       sessions.sort((a, b) => new Date(b.exportDate) - new Date(a.exportDate));
+      this.historySessions = sessions;
 
-      this.historyTbody.innerHTML = sessions.map(session => {
+      this.historyTbody.innerHTML = sessions.map((session, sessionIndex) => {
         const dateStr = new Date(session.exportDate).toLocaleString('vi-VN');
-        const typeBadge = session.invoiceType === 'selling'
-          ? '<span style="color: #ff9f43; font-weight: 600;">Bán ra</span>'
-          : '<span style="color: #28c76f; font-weight: 600;">Mua vào</span>';
+        const canReexport = (session.invoices || []).length > 0 && session.invoices.every(invoice =>
+          invoice.invoiceData && typeof invoice.invoiceData === 'object' &&
+          !Array.isArray(invoice.invoiceData) && Array.isArray(invoice.invoiceData.items)
+        );
+        const sessionTypes = new Set((session.invoices || []).map(invoice =>
+          invoice.exportedInvoiceType || invoice.invoiceType || session.invoiceType || 'buying'
+        ));
+        const typeBadge = sessionTypes.size > 1
+          ? `<span style="color: #496779; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">${uiIcon('fileCheck', 13)} Nhiều loại</span>`
+          : sessionTypes.has('selling')
+            ? `<span style="color: #a96b18; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">${uiIcon('arrowRight', 13)} Bán ra</span>`
+            : `<span style="color: #28734f; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">${uiIcon('download', 13)} Mua vào</span>`;
+        const reexportActions = canReexport
+          ? `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+               <span style="font-size: 12px; color: #475569;">Chọn loại cho từng hóa đơn, hoặc áp dụng hàng loạt:</span>
+               <select class="history-bulk-invoice-type" data-session-index="${sessionIndex}" aria-label="Loại hóa đơn áp dụng cho tất cả" style="min-width: 125px; padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #1e293b;">
+                 <option value="buying" ${session.invoiceType !== 'selling' ? 'selected' : ''}>Mua vào</option>
+                 <option value="selling" ${session.invoiceType === 'selling' ? 'selected' : ''}>Bán ra</option>
+               </select>
+               <button class="btn-small btn-apply-history-type" data-session-index="${sessionIndex}" style="background: #496779;">${uiIcon('check', 14)} Áp dụng cho tất cả</button>
+               <button class="btn-small btn-reexport-session" data-session-index="${sessionIndex}" style="background: #176b57;">${uiIcon('fileSpreadsheet', 14)} Xuất lại file MISA</button>
+             </div>`
+          : `<div style="font-size: 12px; color: #8a5b17; background: #fff8e8; border-left: 3px solid #dba641; padding: 8px 10px;">
+               Lượt tải cũ chưa lưu đủ dữ liệu hóa đơn để xuất lại.
+             </div>`;
 
         const subRows = (session.invoices || []).map((inv, idx) => `
           <tr style="border-bottom: 1px solid #e2e8f0;">
@@ -1459,13 +1730,24 @@ function initApp() {
             <td style="padding: 5px 8px;">${inv.ngayLap || 'N/A'}</td>
             <td style="padding: 5px 8px; max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${inv.partnerName || ''}">${inv.partnerName || 'N/A'}</td>
             <td style="padding: 5px 8px; text-align: right; color: #28c76f; font-weight: 600;">${formatCurrency(inv.totalAmount)}</td>
+            <td style="padding: 5px 8px; color: #475569; white-space: nowrap;">
+              ${(inv.exportedInvoiceType || inv.invoiceType || session.invoiceType) === 'selling' ? 'Bán ra' : 'Mua vào'}
+            </td>
+            <td style="padding: 5px 8px;">
+              ${canReexport
+                ? `<select class="history-invoice-type" data-session-index="${sessionIndex}" data-invoice-index="${idx}" aria-label="Loại hóa đơn xuất lại số ${inv.invoiceNumber || idx + 1}" style="width: 100%; min-width: 115px; padding: 6px 7px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #1e293b;">
+                     <option value="buying" ${(inv.exportedInvoiceType || inv.invoiceType || session.invoiceType) !== 'selling' ? 'selected' : ''}>Mua vào</option>
+                     <option value="selling" ${(inv.exportedInvoiceType || inv.invoiceType || session.invoiceType) === 'selling' ? 'selected' : ''}>Bán ra</option>
+                   </select>`
+                : ''}
+            </td>
           </tr>
         `).join('');
 
         return `
-          <tr class="history-session-header" data-session-id="${session.id}" style="cursor: pointer; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+          <tr class="history-session-header" data-session-index="${sessionIndex}" aria-expanded="false" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; cursor: pointer;">
             <td style="font-weight: 600; color: #1e293b; user-select: none;">
-              <span class="icon-toggle" id="icon-toggle-${session.id}" style="display: inline-block; width: 14px; transition: transform 0.2s;">▶</span> ${dateStr}
+            <span class="icon-toggle" id="icon-toggle-${sessionIndex}" style="width: 14px;">${uiIcon('chevronRight', 14)}</span> ${dateStr}
             </td>
             <td>${typeBadge}</td>
             <td style="text-align: center;">
@@ -1475,15 +1757,18 @@ function initApp() {
               ${formatCurrency(session.totalAmount)}
             </td>
             <td style="text-align: center;">
-              <button class="btn-small btn-toggle-session" data-session-id="${session.id}" style="padding: 3px 8px; font-size: 11px; background: #0052cc;">👁 Xem list</button>
+              <button class="btn-small btn-toggle-session" data-session-index="${sessionIndex}" aria-expanded="false" aria-label="Xem danh sách hóa đơn" style="padding: 4px 8px; font-size: 11px; background: #145c99;">${uiIcon('list', 14)} <span>Xem danh sách</span></button>
             </td>
           </tr>
-          <tr class="history-session-detail" id="detail-session-${session.id}" style="display: none; background: #ffffff;">
+          <tr class="history-session-detail" id="detail-session-${sessionIndex}" style="display: none; background: #ffffff;">
             <td colspan="5" style="padding: 10px 12px; background: #f1f5f9;">
               <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.04);">
                 <div style="font-weight: 600; color: #334155; margin-bottom: 8px; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
-                  <span>📋 Danh sách ${session.totalInvoices} hóa đơn thuộc lần tải (${dateStr})</span>
+                  <span style="display: inline-flex; align-items: center; gap: 5px;">${uiIcon('fileCheck', 14)} Danh sách ${session.totalInvoices} hóa đơn thuộc lần tải (${dateStr})</span>
                   <span style="color: #64748b; font-weight: normal; font-size: 11px;">Tổng tiền: <b style="color: #28c76f;">${formatCurrency(session.totalAmount)}</b></span>
+                </div>
+                <div style="margin: 0 0 10px; padding: 9px 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                  ${reexportActions}
                 </div>
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                   <thead>
@@ -1493,6 +1778,8 @@ function initApp() {
                       <th style="padding: 6px 8px; text-align: left; width: 90px;">Ngày lập</th>
                       <th style="padding: 6px 8px; text-align: left;">Đối tác</th>
                       <th style="padding: 6px 8px; text-align: right; width: 120px;">Tổng tiền</th>
+                      <th style="padding: 6px 8px; text-align: left; width: 110px;">Loại đã chọn trước</th>
+                      <th style="padding: 6px 8px; text-align: left; width: 145px;">Loại xuất lại</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1505,20 +1792,63 @@ function initApp() {
         `;
       }).join('');
 
-      // Sự kiện click đóng/mở từng lần tải
-      this.historyTbody.onclick = (e) => {
-        const headerRow = e.target.closest('.history-session-header');
-        if (headerRow) {
-          const sessionId = headerRow.dataset.sessionId;
-          const detailRow = this.shadow.getElementById(`detail-session-${sessionId}`);
-          const iconToggle = this.shadow.getElementById(`icon-toggle-${sessionId}`);
-          const btnToggle = headerRow.querySelector('.btn-toggle-session');
+      // Mở chi tiết bằng cả nút lẫn hàng; thao tác chọn loại và xuất lại giữ độc lập.
+      this.historyTbody.onclick = async (e) => {
+        const btnApplyAllTypes = e.target.closest('.btn-apply-history-type');
+        if (btnApplyAllTypes) {
+          const sessionIndex = Number(btnApplyAllTypes.dataset.sessionIndex);
+          const detailRow = this.shadow.getElementById(`detail-session-${sessionIndex}`);
+          const bulkTypeSelect = detailRow?.querySelector('.history-bulk-invoice-type');
+          const invoiceTypeSelects = detailRow?.querySelectorAll('.history-invoice-type') || [];
+          if (bulkTypeSelect && invoiceTypeSelects.length > 0) {
+            invoiceTypeSelects.forEach(select => { select.value = bulkTypeSelect.value; });
+            this.showToast(`Đã áp dụng loại ${bulkTypeSelect.value === 'selling' ? 'Bán ra' : 'Mua vào'} cho ${invoiceTypeSelects.length} hóa đơn.`, { type: 'info' });
+          }
+          return;
+        }
 
-          if (detailRow) {
-            const isHidden = detailRow.style.display === 'none';
-            detailRow.style.display = isHidden ? 'table-row' : 'none';
-            if (iconToggle) iconToggle.textContent = isHidden ? '▼' : '▶';
-            if (btnToggle) btnToggle.textContent = isHidden ? '▲ Thu gọn' : '👁 Xem list';
+        const btnReexport = e.target.closest('.btn-reexport-session');
+        if (btnReexport) {
+          const sessionIndex = Number(btnReexport.dataset.sessionIndex);
+          const session = this.historySessions[sessionIndex];
+          const detailRow = this.shadow.getElementById(`detail-session-${sessionIndex}`);
+          const typeSelects = detailRow?.querySelectorAll('.history-invoice-type');
+          if (!session || !typeSelects?.length) return;
+          const invoiceTypes = Array.from(typeSelects, select => select.value);
+
+          btnReexport.disabled = true;
+          btnReexport.innerHTML = `${loadingIcon()} Đang chuẩn bị`;
+          try {
+            await this.onReexportHistory(session.id, invoiceTypes);
+          } finally {
+            if (btnReexport.isConnected) {
+              btnReexport.disabled = false;
+              btnReexport.innerHTML = `${uiIcon('fileSpreadsheet', 14)} Xuất lại file MISA`;
+            }
+          }
+          return;
+        }
+
+        const clickedButton = e.target.closest('button');
+        if ((clickedButton && !clickedButton.classList.contains('btn-toggle-session')) || e.target.closest('select, input, a')) return;
+        const headerRow = e.target.closest('.history-session-header');
+        if (!headerRow) return;
+        const sessionIndex = Number(headerRow.dataset.sessionIndex);
+        const detailRow = this.shadow.getElementById(`detail-session-${sessionIndex}`);
+        const iconToggle = this.shadow.getElementById(`icon-toggle-${sessionIndex}`);
+        const btnToggle = headerRow.querySelector('.btn-toggle-session');
+
+        if (detailRow) {
+          const isHidden = detailRow.style.display === 'none';
+          detailRow.style.display = isHidden ? 'table-row' : 'none';
+          headerRow.setAttribute('aria-expanded', String(isHidden));
+          if (iconToggle) iconToggle.classList.toggle('expanded', isHidden);
+          if (btnToggle) {
+            btnToggle.setAttribute('aria-expanded', String(isHidden));
+            btnToggle.setAttribute('aria-label', isHidden ? 'Thu gọn hóa đơn' : 'Xem danh sách hóa đơn');
+            btnToggle.innerHTML = isHidden
+              ? `${uiIcon('chevronUp', 14)} <span>Thu gọn</span>`
+              : `${uiIcon('list', 14)} <span>Xem danh sách</span>`;
           }
         }
       };
@@ -1535,9 +1865,10 @@ function initApp() {
         info.textContent = acc.name ? `${acc.mst} - ${acc.name}` : acc.mst;
 
         const btnDel = document.createElement('button');
-        btnDel.textContent = 'Xóa';
+        btnDel.innerHTML = `${uiIcon('trash', 14)} Xóa`;
         btnDel.className = 'btn-small';
-        btnDel.style.background = '#ea5455';
+        btnDel.style.background = '#b54c4c';
+        btnDel.title = `Xóa tài khoản ${acc.mst}`;
         btnDel.onclick = async () => {
           if (confirm(`Xóa tài khoản MST ${acc.mst}?`)) {
             await window.electronAPI.deleteAccount(acc.id);
@@ -1549,6 +1880,13 @@ function initApp() {
         li.appendChild(btnDel);
         frag.appendChild(li);
       });
+      if (this.accounts.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'acc-item';
+        empty.style.color = '#64748b';
+        empty.textContent = 'Chưa có tài khoản. Thêm mới hoặc nhập từ Excel.';
+        frag.appendChild(empty);
+      }
       this.accList.appendChild(frag);
     }
 
@@ -1574,7 +1912,8 @@ function initApp() {
     updateWidgetBadge(count, isRunning) {
       if (isRunning || count > 0) {
         this.widgetBadge.style.display = 'block';
-        this.widgetBadge.textContent = count > 0 ? `${count}` : '⚙';
+        if (count > 0) this.widgetBadge.textContent = `${count}`;
+        else this.widgetBadge.innerHTML = uiIcon('activity', 14);
       } else {
         this.widgetBadge.style.display = 'none';
       }
@@ -1587,7 +1926,12 @@ function initApp() {
 
     updateState(state) {
       this.runnerState = state;
-      this.statusBadge.textContent = this.translateState(state);
+      const stateIcons = {
+        IDLE: 'clock', WAITING_FOR_TABLE: 'search', READING_ROWS: 'list', SELECTING_ROW: 'fileSearch',
+        WAITING_FOR_DOWNLOAD_BUTTON: 'search', DOWNLOADING: 'download', MOVING_TO_NEXT_PAGE: 'arrowRight',
+        PAUSED: 'pause', COMPLETED: 'check', FAILED: 'alert', STOPPED: 'stop'
+      };
+      this.statusBadge.innerHTML = `${uiIcon(stateIcons[state] || 'activity', 13)} <span>${this.translateState(state)}</span>`;
       this.statusBadge.className = 'status-badge ' + state.toLowerCase();
 
       if (state === 'IDLE' || state === 'COMPLETED' || state === 'FAILED' || state === 'STOPPED') {
@@ -1595,19 +1939,19 @@ function initApp() {
         this.btnPause.disabled = true;
         this.btnSkip.disabled = true;
         this.btnStop.disabled = true;
-        this.btnPause.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Tạm dừng`;
+        this.btnPause.innerHTML = `${uiIcon('pause', 14)} Tạm dừng`;
       } else if (state === 'PAUSED') {
         this.btnStart.disabled = true;
         this.btnPause.disabled = false;
         this.btnSkip.disabled = false;
         this.btnStop.disabled = false;
-        this.btnPause.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Tiếp tục`;
+        this.btnPause.innerHTML = `${uiIcon('play', 14)} Tiếp tục`;
       } else {
         this.btnStart.disabled = true;
         this.btnPause.disabled = false;
         this.btnSkip.disabled = false;
         this.btnStop.disabled = false;
-        this.btnPause.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Tạm dừng`;
+        this.btnPause.innerHTML = `${uiIcon('pause', 14)} Tạm dừng`;
       }
     }
 
@@ -1632,6 +1976,7 @@ function initApp() {
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
       this.progressEl.textContent = `${done} / ${total} (${pct}%)`;
       this.progressBarFill.style.width = `${pct}%`;
+      this.progressBarFill.parentElement.setAttribute('aria-valuenow', `${pct}`);
       const overlay = this.shadow.getElementById('progress-text-overlay');
       if (overlay) overlay.textContent = `${pct}%`;
       this.successEl.textContent = success;
@@ -1684,19 +2029,19 @@ function initApp() {
       const typeConfig = {
         success: {
           title: 'Thành công',
-          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>'
+          svg: uiIcon('check', 17)
         },
         error: {
           title: 'Có lỗi xảy ra',
-          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>'
+          svg: uiIcon('close', 17)
         },
         warning: {
           title: 'Cảnh báo',
-          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>'
+          svg: uiIcon('alert', 17)
         },
         info: {
           title: 'Thông báo',
-          svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+          svg: uiIcon('info', 17)
         }
       };
       const config = typeConfig[type] || typeConfig.success;
@@ -1717,7 +2062,7 @@ function initApp() {
           ${actionsSection}
         </div>
         <button class="toast-close" id="toast-dismiss" title="Đóng">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          ${uiIcon('close', 13)}
         </button>
       `;
 
@@ -1771,7 +2116,7 @@ function initApp() {
             this.updateProgress.style.display = 'block';
             this.updateProgressBar.style.width = '0%';
             this.updateProgressText.textContent = 'Đang tải...';
-            this.log(`🔄 Phát hiện bản v${data.version}, đang tải ngầm...`, 'warning');
+            this.log(`Phát hiện bản v${data.version}, đang tải ngầm...`, 'warning');
           }
           break;
         case 'not-available':
@@ -1792,9 +2137,10 @@ function initApp() {
           this.updateMsg.textContent = `Bản v${data.version} đã tải xong. Sẵn sàng cài đặt.`;
           this.updateProgress.style.display = 'none';
           this.updateActions.style.display = 'flex';
-          this.updateDownloadBtn.textContent = '🚀 Cài đặt & Khởi động lại';
-          this.updateDownloadBtn.onclick = () => window.electronAPI.installUpdate();
-          this.log(`✅ Tải cập nhật v${data.version} hoàn tất.`, 'success');
+          this.updateDownloadBtn.dataset.action = 'install';
+          this.updateDownloadBtn.disabled = false;
+          this.updateDownloadBtn.innerHTML = `${uiIcon('refresh', 14)} Cài đặt và khởi động lại`;
+          this.log(`Tải cập nhật v${data.version} hoàn tất.`, 'success');
           break;
       }
     }
@@ -1928,6 +2274,7 @@ function initApp() {
           this.retryFailedRows.bind(this),
           this.changeFolder.bind(this),
           this.showReviewModal.bind(this),
+          this.reexportHistorySession.bind(this),
           folder
         );
 
@@ -1935,6 +2282,26 @@ function initApp() {
           if (this.ui) this.ui.handleUpdateStatus(data);
         });
       });
+    }
+
+    async reexportHistorySession(sessionId, invoiceTypes) {
+      try {
+        const result = await window.electronAPI.prepareHistoryReexport({ sessionId, invoiceTypes });
+        if (!result.success) {
+          this.ui.showToast(result.reason || 'Không thể chuẩn bị lượt xuất lại.', { type: 'error' });
+          return;
+        }
+
+        this.pendingReviews = result.reviewItems || [];
+        if (this.pendingReviews.length === 0) {
+          this.ui.showToast('Lượt tải này không có hóa đơn để xuất lại.', { type: 'warning' });
+          return;
+        }
+
+        await this.showReviewModal();
+      } catch (error) {
+        this.ui.showToast(`Lỗi chuẩn bị xuất lại: ${error.message}`, { type: 'error' });
+      }
     }
 
     async changeFolder() {
@@ -1976,7 +2343,7 @@ function initApp() {
         this.ui.log('⏸ Đã tạm dừng tiến trình.', 'warning');
       } else {
         this.setState('READING_ROWS');
-        this.ui.log('▶️ Tiếp tục tiến trình tải...', 'success');
+        this.ui.log('Tiếp tục tiến trình tải.', 'success');
       }
     }
 
@@ -2003,11 +2370,11 @@ function initApp() {
         if (autoType === 'selling') {
           const rad = this.ui.shadow.getElementById('rad-invoice-selling');
           if (rad) rad.checked = true;
-          this.ui.log('ℹ️ Tự động khớp tab Thuế: Hóa đơn Bán ra', 'info');
+          this.ui.log('Tự động khớp tab Thuế: Hóa đơn Bán ra.', 'info');
         } else if (autoType === 'buying') {
           const rad = this.ui.shadow.getElementById('rad-invoice-buying');
           if (rad) rad.checked = true;
-          this.ui.log('ℹ️ Tự động khớp tab Thuế: Hóa đơn Mua vào', 'info');
+          this.ui.log('Tự động khớp tab Thuế: Hóa đơn Mua vào.', 'info');
         }
       }
 
@@ -2052,7 +2419,7 @@ function initApp() {
               `Đã tải xong ${this.pendingReviews.length} hóa đơn!\nBấm "Tiếp tục" để chọn mẫu Excel MISA hoặc tải lại các dòng lỗi (nếu có).`,
               {
                 actions: [{
-                  label: '➡️ Tiếp tục chọn mẫu',
+                  label: 'Tiếp tục chọn mẫu',
                   onClick: () => this.showReviewModal()
                 }],
                 autoDismissMs: 15000
@@ -2064,7 +2431,7 @@ function initApp() {
               `Đã tải xong ${this.successCount} hóa đơn thành công!`,
               {
                 actions: [{
-                  label: '📂 Mở thư mục',
+                  label: 'Mở thư mục',
                   onClick: () => window.electronAPI.openFolder(folder)
                 }],
                 autoDismissMs: 15000
@@ -2082,7 +2449,7 @@ function initApp() {
               `Đã dừng tải. Đã tải được ${this.pendingReviews.length} hóa đơn.\nBấm "Tiếp tục" để chọn mẫu Excel MISA hoặc tải lại các dòng lỗi.`,
               {
                 actions: [{
-                  label: '➡️ Tiếp tục chọn mẫu',
+                  label: 'Tiếp tục chọn mẫu',
                   onClick: () => this.showReviewModal()
                 }],
                 autoDismissMs: 15000
@@ -2227,9 +2594,9 @@ function initApp() {
             dlResult.reviewItems.forEach(item => {
               this.ui.updateFinancials(item.tongChuaThue, item.tongThue, item.tongThanhToan);
             });
-            this.ui.log(`✓ Dòng ${i + 1}: Tải xong HĐ ${dlResult.reviewItems[0]?.invoiceNumber || ''}. Đợi xác nhận mẫu...`, 'success');
+            this.ui.log(`Dòng ${i + 1}: Đã tải hóa đơn ${dlResult.reviewItems[0]?.invoiceNumber || ''}; đang đợi xác nhận mẫu.`, 'success');
           } else {
-            this.ui.log(`✓ Dòng ${i + 1}: Tải thành công.`, 'success');
+            this.ui.log(`Dòng ${i + 1}: Tải thành công.`, 'success');
           }
         } catch (e) {
           if (e.name === 'AbortError' && e.message !== 'Người dùng bấm Bỏ qua') {
@@ -2255,7 +2622,7 @@ function initApp() {
 
     async retryFailedRows() {
       if (this.failedRows.length === 0) return;
-      this.ui.log(`🔄 Bắt đầu tải lại ${this.failedRows.length} dòng bị lỗi...`, 'warning');
+      this.ui.log(`Bắt đầu tải lại ${this.failedRows.length} dòng bị lỗi...`, 'warning');
       const retrying = [...this.failedRows];
       this.failedRows = [];
       this.ui.showRetryBar(0);
@@ -2275,10 +2642,10 @@ function initApp() {
               this.ui.updateFinancials(rev.tongChuaThue, rev.tongThue, rev.tongThanhToan);
             });
           }
-          this.ui.log(`✓ Tải lại thành công dòng ${item.index + 1}`, 'success');
+          this.ui.log(`Tải lại thành công dòng ${item.index + 1}.`, 'success');
         } catch (e) {
           this.failedRows.push(item);
-          this.ui.log(`✕ Tải lại thất bại dòng ${item.index + 1}: ${e.message}`, 'error');
+          this.ui.log(`Tải lại thất bại dòng ${item.index + 1}: ${e.message}`, 'error');
         } finally {
           this.skipController = null;
         }
@@ -2296,7 +2663,7 @@ function initApp() {
         if (err.name === 'AbortError') {
           throw err;
         }
-        this.ui.log(`⚠️ Dòng ${index + 1}: Tải XML gặp lỗi (${err.message}). Đang chuyển sang xem hóa đơn & crawl dữ liệu...`, 'warning');
+        this.ui.log(`Dòng ${index + 1}: Tải XML gặp lỗi (${err.message}). Đang chuyển sang xem hóa đơn để lấy dữ liệu...`, 'warning');
         return await this.downloadRowViaModalCrawl(row, index, signal, skipSignal);
       }
     }
@@ -2495,7 +2862,7 @@ function initApp() {
         throw new Error('Không tìm thấy nút Xem hóa đơn (biểu tượng con mắt)');
       }
 
-      this.ui.log(`👁 Dòng ${index + 1}: Bấm nút Xem hóa đơn để crawl dữ liệu...`, 'info');
+      this.ui.log(`Dòng ${index + 1}: Mở hóa đơn để lấy dữ liệu...`, 'info');
       viewBtn.click();
       await this.sendNativeClick(viewBtn);
 
@@ -2883,7 +3250,9 @@ function initApp() {
       const chkSelectAll = this.ui.shadow.getElementById('chk-review-select-all');
       const bulkSelect = this.ui.shadow.getElementById('bulk-template-select');
       const btnApplyBulk = this.ui.shadow.getElementById('btn-apply-bulk');
+      const bulkTemplateLabel = this.ui.shadow.getElementById('bulk-template-label');
       const filterTabs = this.ui.shadow.getElementById('review-filter-tabs');
+      const searchInput = this.ui.shadow.getElementById('review-search');
 
       const cntAll = this.ui.shadow.getElementById('cnt-all');
       const cntGoods = this.ui.shadow.getElementById('cnt-goods');
@@ -2897,6 +3266,13 @@ function initApp() {
       const isSellingFirst = this.pendingReviews[0]?.invoiceType === 'selling';
       const availableTemplates = isSellingFirst ? templates.selling : templates.buying;
       bulkSelect.innerHTML = availableTemplates.map(t => `<option value="${t.file}">${t.name}</option>`).join('');
+      const invoiceTypes = new Set(this.pendingReviews.map(item => item.invoiceType || 'buying'));
+      const hasMixedInvoiceTypes = invoiceTypes.size > 1;
+      bulkTemplateLabel.textContent = hasMixedInvoiceTypes
+        ? 'Chọn mẫu riêng theo từng loại hóa đơn'
+        : 'Đổi mẫu cho các dòng đã chọn';
+      bulkSelect.style.display = hasMixedInvoiceTypes ? 'none' : '';
+      btnApplyBulk.style.display = hasMixedInvoiceTypes ? 'none' : '';
 
       let totalPretax = 0;
       let totalTax = 0;
@@ -2937,12 +3313,20 @@ function initApp() {
           <td>
             <select data-index="${index}">${optionsHtml}</select>
           </td>
-          <td style="text-align: center;">
-            <button class="btn-small btn-view-detail" data-index="${index}" style="padding: 3px 8px; font-size: 11px; background: #5a6a85;">👁 Xem</button>
+            <td style="text-align: center;">
+              <button class="btn-small btn-view-detail" data-index="${index}" style="padding: 4px 8px; font-size: 11px; background: #64748b;">${uiIcon('fileSearch', 14)} Xem</button>
           </td>
         `;
         tbody.appendChild(tr);
       });
+
+      const emptySearchRow = document.createElement('tr');
+      emptySearchRow.className = 'review-empty-row';
+      emptySearchRow.style.display = 'none';
+      emptySearchRow.innerHTML = `<td colspan="6" style="padding: 28px 12px; color: #64748b; text-align: center;">
+        <span style="display: inline-flex; align-items: center; gap: 7px;">${uiIcon('search', 16)} Không tìm thấy hóa đơn phù hợp.</span>
+      </td>`;
+      tbody.appendChild(emptySearchRow);
 
       cntAll.textContent = this.pendingReviews.length;
       cntGoods.textContent = goodsCount;
@@ -2950,23 +3334,52 @@ function initApp() {
 
       reviewSummaryInfo.innerHTML = `Tổng tiền chưa thuế: <b>${formatCurrency(totalPretax)}</b> | Thuế GTGT: <b>${formatCurrency(totalTax)}</b>`;
 
-      filterTabs.onclick = (e) => {
-        const tab = e.target.closest('.filter-tab');
-        if (!tab) return;
-        filterTabs.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
+      const syncSelectAllState = () => {
+        const visibleCheckboxes = Array.from(tbody.querySelectorAll('.chk-review-row'))
+          .filter(checkbox => checkbox.closest('tr').style.display !== 'none');
+        const checkedCount = visibleCheckboxes.filter(checkbox => checkbox.checked).length;
+        chkSelectAll.checked = visibleCheckboxes.length > 0 && checkedCount === visibleCheckboxes.length;
+        chkSelectAll.indeterminate = checkedCount > 0 && checkedCount < visibleCheckboxes.length;
+      };
 
-        const filter = tab.dataset.filter;
-        const rows = tbody.querySelectorAll('tr');
-        rows.forEach(r => {
-          if (filter === 'all') r.style.display = '';
-          else if (filter === 'goods' && r.dataset.category === 'goods') r.style.display = '';
-          else if (filter === 'services' && r.dataset.category === 'services') r.style.display = '';
-          else r.style.display = 'none';
+      let activeFilter = 'all';
+      const foldText = (value) => (value || '')
+        .toLocaleLowerCase('vi-VN')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd');
+      const applyReviewFilters = () => {
+        const query = foldText(searchInput.value.trim());
+        const rows = tbody.querySelectorAll('tr[data-category]');
+        let visibleCount = 0;
+        rows.forEach(row => {
+          const matchesCategory = activeFilter === 'all' || row.dataset.category === activeFilter;
+          const matchesSearch = !query || foldText(row.textContent).includes(query);
+          row.style.display = matchesCategory && matchesSearch ? '' : 'none';
+          if (matchesCategory && matchesSearch) visibleCount++;
         });
+        emptySearchRow.style.display = visibleCount === 0 ? 'table-row' : 'none';
+        syncSelectAllState();
       };
 
       chkSelectAll.checked = false;
+      chkSelectAll.indeterminate = false;
+      searchInput.value = '';
+      searchInput.oninput = applyReviewFilters;
+      applyReviewFilters();
+      filterTabs.onclick = (e) => {
+        const tab = e.target.closest('.filter-tab');
+        if (!tab) return;
+        filterTabs.querySelectorAll('.filter-tab').forEach(t => {
+          t.classList.remove('active');
+          t.setAttribute('aria-pressed', 'false');
+        });
+        tab.classList.add('active');
+        tab.setAttribute('aria-pressed', 'true');
+        activeFilter = tab.dataset.filter;
+        applyReviewFilters();
+      };
+
       chkSelectAll.onchange = () => {
         const checkboxes = tbody.querySelectorAll('.chk-review-row');
         checkboxes.forEach(cb => {
@@ -2974,6 +3387,10 @@ function initApp() {
             cb.checked = chkSelectAll.checked;
           }
         });
+        syncSelectAllState();
+      };
+      tbody.onchange = (e) => {
+        if (e.target.matches('.chk-review-row')) syncSelectAllState();
       };
 
       btnApplyBulk.onclick = () => {
@@ -3004,6 +3421,7 @@ function initApp() {
       };
 
       modal.style.display = 'flex';
+      searchInput.focus();
 
       btnCancel.onclick = () => {
         if (this.pendingReviews.length > 0) {
@@ -3012,21 +3430,23 @@ function initApp() {
         modal.style.display = 'none';
         this.pendingReviews = [];
         this.ui.showContinueBar(0);
+        this.ui.btnStart.focus();
       };
 
       btnExport.onclick = async () => {
         btnExport.disabled = true;
-        btnExport.textContent = 'Đang xuất...';
+        btnExport.innerHTML = `${loadingIcon()} Đang xuất...`;
 
         const selects = tbody.querySelectorAll('select');
         selects.forEach(select => {
           const idx = parseInt(select.getAttribute('data-index'));
           this.pendingReviews[idx].template = select.value;
+          this.pendingReviews[idx].templateName = select.selectedOptions[0]?.textContent || select.value;
         });
 
         try {
           // Cập nhật trạng thái tiến độ chi tiết trên nút
-          const spinner = `<svg style="animation: spin 1s linear infinite; margin-right: 4px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>`;
+          const spinner = loadingIcon(14);
           btnExport.innerHTML = `${spinner} Đang xử lý xuất Excel... 0%`;
 
           // Lắng nghe progress từ Worker
@@ -3063,14 +3483,20 @@ function initApp() {
               totalAmount: this.pendingReviews.reduce((sum, item) => sum + (item.tongThanhToan || 0), 0),
               invoices: this.pendingReviews.map(item => ({
                 invoiceType: item.invoiceType,
+                exportedInvoiceType: item.invoiceType,
                 invoiceNumber: item.invoiceNumber,
                 ngayLap: item.ngayLap,
                 partnerName: item.invoiceType === 'selling' ? item.nmuaTen : item.nbanTen,
                 totalAmount: item.tongThanhToan,
-                templateName: item.templateName || item.template
+                templateName: item.templateName || item.template,
+                sourceDir: item.outputDir || null,
+                invoiceData: item.invoiceData || null
               }))
             };
             await window.electronAPI.addHistory([batchSession]);
+            if (this.ui.historyModal.style.display === 'flex') {
+              this.ui.renderHistory(await window.electronAPI.getHistory());
+            }
           }
 
           const successCount = successResults.length;
@@ -3080,23 +3506,25 @@ function initApp() {
 
           const folder = await window.electronAPI.getDownloadFolder();
           const primaryFile = successResults[0]?.outputPath;
+          const resultFolder = successResults[0]?.dirPath || folder;
+          this.ui.btnStart.focus();
 
           const actions = [
             {
-              label: '📂 Mở thư mục chứa',
-              onClick: () => window.electronAPI.openFolder(folder)
+              label: 'Mở thư mục chứa',
+              onClick: () => window.electronAPI.openFolder(resultFolder)
             }
           ];
 
           if (primaryFile) {
             actions.unshift({
-              label: '📊 Mở file Excel ngay',
+              label: 'Mở file Excel',
               onClick: () => window.electronAPI.openFile(primaryFile)
             });
           }
 
           this.ui.showToast(
-            `Đã xuất Excel xong: ${successCount}/${results.length} file thành công!\n💰 Tổng tiền chưa thuế: ${formatCurrency(totalPretax)} | GTGT: ${formatCurrency(totalTax)}`,
+            `Đã xuất Excel: ${successCount}/${results.length} file thành công.\nTổng tiền chưa thuế: ${formatCurrency(totalPretax)} | GTGT: ${formatCurrency(totalTax)}`,
             {
               actions,
               autoDismissMs: 20000
@@ -3106,7 +3534,7 @@ function initApp() {
           this.ui.showToast(`Lỗi xuất Excel: ${e.message}`, { type: 'error' });
         } finally {
           btnExport.disabled = false;
-          btnExport.textContent = 'Xuất Tất Cả Excel';
+          btnExport.innerHTML = `${uiIcon('fileSpreadsheet', 15)} Xuất tất cả`;
         }
       };
     }
@@ -3149,13 +3577,13 @@ function initApp() {
       detailBody.innerHTML = `
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 12px; margin-bottom: 12px; background: #f8f9fa; padding: 10px; border-radius: 6px;">
           <div>
-            <div style="font-weight: bold; color: #0052cc; margin-bottom: 4px;">🏢 Bên Bán (Người bán)</div>
+            <div style="font-weight: 600; color: #145c99; margin-bottom: 4px; display: inline-flex; align-items: center; gap: 5px;">${uiIcon('building', 15)} Bên bán</div>
             <div><b>Tên:</b> ${item.nbanTen || 'N/A'}</div>
             <div><b>MST:</b> ${item.nbanMst || 'N/A'}</div>
             <div><b>Địa chỉ:</b> ${item.nbanDchi || 'N/A'}</div>
           </div>
           <div>
-            <div style="font-weight: bold; color: #0052cc; margin-bottom: 4px;">🛒 Bên Mua (Người mua)</div>
+            <div style="font-weight: 600; color: #145c99; margin-bottom: 4px; display: inline-flex; align-items: center; gap: 5px;">${uiIcon('users', 15)} Bên mua</div>
             <div><b>Tên:</b> ${item.nmuaTen || 'N/A'}</div>
             <div><b>MST:</b> ${item.nmuaMst || 'N/A'}</div>
             <div><b>Địa chỉ:</b> ${item.nmuaDchi || 'N/A'}</div>
@@ -3176,7 +3604,7 @@ function initApp() {
             </tr>
           </thead>
           <tbody>
-            ${itemsRows.length > 0 ? itemsRows : '<tr><td colspan="7" style="text-align: center; color: #909399; padding: 30px;"><svg style="margin-bottom: 8px;" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#dcdfe6" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="15"></line><line x1="15" y1="9" x2="9" y2="15"></line></svg><br/>Không có thông tin chi tiết mặt hàng</td></tr>'}
+            ${itemsRows.length > 0 ? itemsRows : `<tr><td colspan="7" style="text-align: center; color: #64748b; padding: 30px;">${uiIcon('fileSearch', 40)}<br/>Không có thông tin chi tiết mặt hàng</td></tr>`}
           </tbody>
         </table>
 

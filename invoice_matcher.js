@@ -723,15 +723,17 @@ function fillTemplate(invoice, templateFile, templateDir) {
  * @param {string} [outputDir] - Directory to write the output Excel file. If omitted, saves in the same directory as the XML file.
  * @returns {object} Result summary
  */
-function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir = null, activeMst = null, forceTemplate = null) {
-    if (!fs.existsSync(xmlPath)) {
+function processInvoiceXMLFile(xmlPath, templateDir, type = 'buying', outputDir = null, activeMst = null, forceTemplate = null, invoiceDataOverride = null) {
+    if (!invoiceDataOverride && !fs.existsSync(xmlPath)) {
         throw new Error(`XML file does not exist: ${xmlPath}`);
     }
     if (!fs.existsSync(templateDir)) {
         throw new Error(`Templates directory does not exist: ${templateDir}`);
     }
 
-    const invoice = parseInvoiceXML(xmlPath);
+    const invoice = invoiceDataOverride
+        ? { ...invoiceDataOverride, items: (invoiceDataOverride.items || []).map(item => ({ ...item })) }
+        : parseInvoiceXML(xmlPath);
     if (!invoice) {
         throw new Error(`Could not parse invoice XML at ${xmlPath}`);
     }
